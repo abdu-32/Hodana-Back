@@ -1,0 +1,23 @@
+# Core framework — Design Spec Sec 3 (tech stack fixed in Document 03 Sec 3)
+Django>=5.1,<6.0
+djangorestframework>=3.15
+django-environ>=0.11
+django-cors-headers>=4.4
+psycopg2-binary>=2.9
+
+# Auth — stateless JWT, Design Spec Sec 4.1
+djangorestframework-simplejwt>=5.3
+
+# Background jobs / cache / queue — Design Spec Sec 6.1-6.2
+# Disabled for now — see config/settings/base.py for re-enable instructions.
+# celery>=5.4
+# redis>=5.0
+# django-celery-beat>=2.6
+# django-celery-results>=2.5
+
+# Object storage — S3-compatible, Design Spec Sec 6.3
+# Disabled for now — using local filesystem storage instead.
+# django-storages[s3]>=1.14
+
+# API docs (generated from Document 04's contract)
+drf-spectacular>=0.27

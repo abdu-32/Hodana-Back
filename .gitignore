@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+db.sqlite3
+staticfiles/
+media/
+.pytest_cache/
+.ruff_cache/
+
+.env
+!.env.example
+
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# contracts/openapi.yaml is a build artifact but IS committed —
+# it's what the frontend team consumes. Do not ignore it.

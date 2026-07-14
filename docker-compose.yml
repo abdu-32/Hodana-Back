@@ -1,0 +1,43 @@
+# Backend team's local dev stack. Nothing here depends on the frontend
+# repo, and nothing in the frontend repo depends on this file.
+#
+# Celery + Redis are removed for now (see config/settings/base.py and
+# README.md for how to bring them back — docker-compose.yml.celery-example
+# has the worker/beat/redis service definitions ready to paste back in).
+#
+# Usage:
+#   docker compose up --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: innovation_hub
+      POSTGRES_PASSWORD: innovation_hub
+      POSTGRES_DB: innovation_hub
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U innovation_hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    env_file:
+      - ./.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:

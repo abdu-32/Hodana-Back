@@ -1,0 +1,1957 @@
+openapi: 3.0.3
+info:
+  title: Ethiopia Innovation Hub API
+  version: 0.1.0
+  description: API contract for the Ethiopia Innovation Hub hackathon platform (discover, register, form teams, submit, judge, and showcase).
+servers:
+- url: https://api.hub.et.example/api/v1
+tags:
+- name: Health
+  description: Service health and readiness checks.
+- name: Auth
+  description: Signup, login, and token refresh flows.
+- name: Users
+  description: User account and public profile management.
+- name: Hackathons
+  description: Hackathon creation, discovery, and registration.
+- name: Tracks
+  description: Sponsor challenge tracks within a hackathon.
+- name: Teams
+  description: Team formation and membership.
+- name: Submissions
+  description: Project submissions, eligibility, and track assignment.
+- name: Judging
+  description: Judging rounds, criteria, invitations, and scores.
+- name: Analytics
+  description: Organizer analytics and reporting.
+- name: Notifications
+  description: Announcements and reminders.
+- name: Search
+  description: Search for users and mentors.
+- name: Payments
+  description: Prize disbursement via local payment gateways.
+security:
+- bearerAuth: []
+paths:
+  /health:
+    get:
+      tags:
+      - Health
+      security: []
+      operationId: getHealth
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /auth/signup:
+    post:
+      tags:
+      - Auth
+      security: []
+      operationId: signup
+      summary: Create a new user (email/password or OAuth)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /auth/login:
+    post:
+      tags:
+      - Auth
+      security: []
+      operationId: login
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /auth/refresh:
+    post:
+      tags:
+      - Auth
+      operationId: refreshToken
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /users/me:
+    get:
+      tags:
+      - Users
+      operationId: getCurrentUser
+      summary: View current user's own profile
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags:
+      - Users
+      operationId: updateCurrentUser
+      summary: Update current user's own profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /users/{id}:
+    get:
+      tags:
+      - Users
+      operationId: getUserById
+      summary: View another user's public profile
+      parameters:
+      - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /hackathons:
+    get:
+      tags:
+      - Hackathons
+      security: []
+      operationId: listHackathons
+      summary: List hackathons (filterable by keyword, date range, tags)
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      - name: keyword
+        in: query
+        schema:
+          type: string
+      - name: tag
+        in: query
+        schema:
+          type: string
+      - name: mode
+        in: query
+        schema:
+          type: string
+          enum:
+          - online
+          - in_person
+          - hybrid
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - draft
+          - published
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedHackathons'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      tags:
+      - Hackathons
+      operationId: createHackathon
+      summary: Create a hackathon (organizer only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HackathonCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hackathon'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /hackathons/{id}:
+    get:
+      tags:
+      - Hackathons
+      security: []
+      operationId: getHackathonById
+      summary: Get a hackathon
+      parameters:
+      - $ref: '#/components/parameters/HackathonId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hackathon'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    put:
+      tags:
+      - Hackathons
+      operationId: updateHackathon
+      summary: Update a hackathon (organizer only)
+      parameters:
+      - $ref: '#/components/parameters/HackathonId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HackathonUpdateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hackathon'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - Hackathons
+      operationId: deleteHackathon
+      summary: Delete a hackathon (organizer only)
+      parameters:
+      - $ref: '#/components/parameters/HackathonId'
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /hackathons/{id}/register:
+    post:
+      tags:
+      - Hackathons
+      operationId: registerForHackathon
+      summary: Register current user for a hackathon
+      parameters:
+      - $ref: '#/components/parameters/HackathonId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationCreateRequest'
+      responses:
+        '201':
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /hackathons/{id}/tracks:
+    get:
+      tags:
+      - Tracks
+      security: []
+      operationId: listChallengeTracks
+      summary: List challenge tracks for a hackathon
+      parameters:
+      - $ref: '#/components/parameters/HackathonId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedChallengeTracks'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - Tracks
+      operationId: createChallengeTrack
+      summary: Create a sponsor challenge track (organizer/sponsor)
+      parameters:
+      - $ref: '#/components/parameters/HackathonId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallengeTrackCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChallengeTrack'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /hackathons/{id}/teams:
+    get:
+      tags:
+      - Teams
+      operationId: listTeams
+      summary: List teams for a hackathon
+      parameters:
+      - $ref: '#/components/parameters/HackathonId'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      - name: openToMembers
+        in: query
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTeams'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - Teams
+      operationId: createTeam
+      summary: Create a new team
+      parameters:
+      - $ref: '#/components/parameters/HackathonId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /teams/{id}:
+    get:
+      tags:
+      - Teams
+      operationId: getTeamById
+      summary: Get a team
+      parameters:
+      - $ref: '#/components/parameters/TeamId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+      - Teams
+      operationId: updateTeam
+      summary: Update a team (leader only)
+      parameters:
+      - $ref: '#/components/parameters/TeamId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamUpdateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+      - Teams
+      operationId: disbandTeam
+      summary: Disband a team (leader only)
+      parameters:
+      - $ref: '#/components/parameters/TeamId'
+      responses:
+        '204':
+          description: Disbanded
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /teams/{id}/members:
+    post:
+      tags:
+      - Teams
+      operationId: inviteOrJoinTeam
+      summary: Invite a member, or request to join an open team
+      parameters:
+      - $ref: '#/components/parameters/TeamId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamMemberRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMember'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /hackathons/{id}/submissions:
+    get:
+      tags:
+      - Submissions
+      operationId: listSubmissions
+      summary: List submissions for a hackathon
+      parameters:
+      - $ref: '#/components/parameters/HackathonId'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      - name: trackId
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: eligibilityStatus
+        in: query
+        schema:
+          type: string
+          enum:
+          - pending
+          - eligible
+          - disqualified
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSubmissions'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - Submissions
+      operationId: createSubmission
+      summary: Create a project submission
+      parameters:
+      - $ref: '#/components/parameters/HackathonId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /submissions/{id}:
+    get:
+      tags:
+      - Submissions
+      operationId: getSubmissionById
+      summary: Get a submission
+      parameters:
+      - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+      - Submissions
+      operationId: updateSubmission
+      summary: Edit a submission (before deadline)
+      parameters:
+      - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionUpdateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /submissions/{id}/eligibility:
+    put:
+      tags:
+      - Submissions
+      operationId: setSubmissionEligibility
+      summary: Mark a submission eligible or disqualified (organizer only)
+      parameters:
+      - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EligibilityUpdateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /submissions/{id}/tracks:
+    post:
+      tags:
+      - Submissions
+      operationId: assignSubmissionTrack
+      summary: Assign a submission to a challenge track
+      parameters:
+      - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionTrackRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionTrack'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags:
+      - Submissions
+      operationId: removeSubmissionTrack
+      summary: Remove a submission's challenge track assignment
+      parameters:
+      - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionTrackRequest'
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /rounds:
+    get:
+      tags:
+      - Judging
+      operationId: listJudgingRounds
+      summary: List judging rounds (Overall or per-track)
+      parameters:
+      - name: hackathonId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: trackId
+        in: query
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedJudgingRounds'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      tags:
+      - Judging
+      operationId: createJudgingRound
+      summary: Create a judging round (organizer/sponsor)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JudgingRoundCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JudgingRound'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /rounds/{id}/criteria:
+    get:
+      tags:
+      - Judging
+      operationId: listJudgingCriteria
+      summary: Get the scoring rubric for a round
+      parameters:
+      - $ref: '#/components/parameters/RoundId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedJudgingCriteria'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+      - Judging
+      operationId: createJudgingCriterion
+      summary: Define a scoring criterion for a round (organizer/sponsor)
+      parameters:
+      - $ref: '#/components/parameters/RoundId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JudgingCriterionCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JudgingCriterion'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /submissions/{id}/scores:
+    get:
+      tags:
+      - Judging
+      operationId: listSubmissionScores
+      summary: Get all judges' scores for a submission
+      parameters:
+      - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedScores'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /submissions/{id}/score:
+    post:
+      tags:
+      - Judging
+      operationId: submitScore
+      summary: Submit a judge's score for a criterion
+      parameters:
+      - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScoreCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Score'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /judge/invitations:
+    post:
+      tags:
+      - Judging
+      operationId: inviteJudge
+      summary: Invite a judge by email (organizer/sponsor)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JudgeInvitationCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JudgeInvitation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /hackathons/{id}/analytics:
+    get:
+      tags:
+      - Analytics
+      operationId: getHackathonAnalytics
+      summary: Registration trend, conversion rate, and demographics (organizer only)
+      parameters:
+      - $ref: '#/components/parameters/HackathonId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /notifications:
+    post:
+      tags:
+      - Notifications
+      operationId: createNotification
+      summary: Post an announcement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /search/users:
+    get:
+      tags:
+      - Search
+      operationId: searchUsers
+      summary: Search users for team invites
+      parameters:
+      - name: query
+        in: query
+        required: true
+        schema:
+          type: string
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPublicProfiles'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /search/mentors:
+    get:
+      tags:
+      - Search
+      operationId: searchMentors
+      summary: List mentors by skill (future)
+      parameters:
+      - name: skill
+        in: query
+        schema:
+          type: string
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedMentors'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /payments/:
+    post:
+      tags:
+      - Payments
+      operationId: triggerPrizePayment
+      summary: Trigger prize payment via a local gateway (Telebirr/CBE Birr/Chapa) (future)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentTransaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+components:
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    HackathonId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TeamId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SubmissionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RoundId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+    Offset:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    PaginationMeta:
+      type: object
+      properties:
+        limit:
+          type: integer
+        offset:
+          type: integer
+        total:
+          type: integer
+    SignupRequest:
+      type: object
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+        fullName:
+          type: string
+        oauthProvider:
+          type: string
+          enum:
+          - github
+        oauthToken:
+          type: string
+    LoginRequest:
+      type: object
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    RefreshRequest:
+      type: object
+      required:
+      - refreshToken
+      properties:
+        refreshToken:
+          type: string
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserProfile'
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        bio:
+          type: string
+        university:
+          type: string
+        skills:
+          type: array
+          items:
+            type: string
+        avatarUrl:
+          type: string
+        portfolioUrl:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+            enum:
+            - participant
+            - organizer
+            - judge
+            - mentor
+            - sponsor
+            - admin
+        verificationStatus:
+          type: string
+          enum:
+          - unverified
+          - pending
+          - verified
+        createdAt:
+          type: string
+          format: date-time
+    UserUpdateRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        bio:
+          type: string
+        university:
+          type: string
+        skills:
+          type: array
+          items:
+            type: string
+        avatarUrl:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+    PublicProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        bio:
+          type: string
+        university:
+          type: string
+        skills:
+          type: array
+          items:
+            type: string
+        avatarUrl:
+          type: string
+        portfolioUrl:
+          type: string
+        badges:
+          type: array
+          items:
+            $ref: '#/components/schemas/Badge'
+    PaginatedPublicProfiles:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicProfile'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    Badge:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+          - verified_student
+          - hackathon_veteran
+        awardedAt:
+          type: string
+          format: date-time
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+          - university
+          - company
+          - ngo
+          - government
+        contactEmail:
+          type: string
+          format: email
+    Hackathon:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        hostOrgId:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        bannerUrl:
+          type: string
+        registrationOpensAt:
+          type: string
+          format: date-time
+        registrationClosesAt:
+          type: string
+          format: date-time
+        submissionOpensAt:
+          type: string
+          format: date-time
+        submissionClosesAt:
+          type: string
+          format: date-time
+        rules:
+          type: string
+        prizeInfo:
+          type: string
+        locationMode:
+          type: string
+          enum:
+          - online
+          - in_person
+          - hybrid
+        eligibilityRules:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum:
+          - draft
+          - published
+        createdAt:
+          type: string
+          format: date-time
+    HackathonCreateRequest:
+      type: object
+      required:
+      - title
+      - hostOrgId
+      - registrationOpensAt
+      - registrationClosesAt
+      - submissionOpensAt
+      - submissionClosesAt
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        hostOrgId:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        bannerUrl:
+          type: string
+        registrationOpensAt:
+          type: string
+          format: date-time
+        registrationClosesAt:
+          type: string
+          format: date-time
+        submissionOpensAt:
+          type: string
+          format: date-time
+        submissionClosesAt:
+          type: string
+          format: date-time
+        rules:
+          type: string
+        prizeInfo:
+          type: string
+        locationMode:
+          type: string
+          enum:
+          - online
+          - in_person
+          - hybrid
+        eligibilityRules:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+    HackathonUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        bannerUrl:
+          type: string
+        registrationOpensAt:
+          type: string
+          format: date-time
+        registrationClosesAt:
+          type: string
+          format: date-time
+        submissionOpensAt:
+          type: string
+          format: date-time
+        submissionClosesAt:
+          type: string
+          format: date-time
+        rules:
+          type: string
+        prizeInfo:
+          type: string
+        eligibilityRules:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum:
+          - draft
+          - published
+    PaginatedHackathons:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Hackathon'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    RegistrationCreateRequest:
+      type: object
+      properties:
+        eligibilityConfirmed:
+          type: boolean
+        customAnswers:
+          type: object
+          additionalProperties: true
+    Registration:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        hackathonId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        eligibilityConfirmed:
+          type: boolean
+        verificationStatus:
+          type: string
+          enum:
+          - unverified
+          - pending
+          - verified
+        registeredAt:
+          type: string
+          format: date-time
+    ChallengeTrack:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        hackathonId:
+          type: string
+          format: uuid
+        sponsorOrgId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        prize:
+          type: string
+        rubricReference:
+          type: string
+    ChallengeTrackCreateRequest:
+      type: object
+      required:
+      - sponsorOrgId
+      - name
+      properties:
+        sponsorOrgId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        prize:
+          type: string
+        rubricReference:
+          type: string
+    PaginatedChallengeTracks:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChallengeTrack'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    Team:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        hackathonId:
+          type: string
+          format: uuid
+        teamName:
+          type: string
+        leaderUserId:
+          type: string
+          format: uuid
+        openToMembers:
+          type: boolean
+        maxSize:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+    TeamCreateRequest:
+      type: object
+      required:
+      - teamName
+      properties:
+        teamName:
+          type: string
+        openToMembers:
+          type: boolean
+    TeamUpdateRequest:
+      type: object
+      properties:
+        teamName:
+          type: string
+        openToMembers:
+          type: boolean
+    PaginatedTeams:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Team'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    TeamMemberRequest:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        inviteeEmail:
+          type: string
+          format: email
+    TeamMember:
+      type: object
+      properties:
+        teamId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        joinStatus:
+          type: string
+          enum:
+          - pending
+          - accepted
+          - declined
+    Submission:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        hackathonId:
+          type: string
+          format: uuid
+        teamId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        tagline:
+          type: string
+        description:
+          type: string
+        technologies:
+          type: array
+          items:
+            type: string
+        repoLink:
+          type: string
+        demoVideoUrl:
+          type: string
+        attachmentUrls:
+          type: array
+          items:
+            type: string
+        eligibilityStatus:
+          type: string
+          enum:
+          - pending
+          - eligible
+          - disqualified
+        eligibilityReason:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+    SubmissionCreateRequest:
+      type: object
+      required:
+      - teamId
+      - title
+      - repoLink
+      properties:
+        teamId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        tagline:
+          type: string
+        description:
+          type: string
+        technologies:
+          type: array
+          items:
+            type: string
+        repoLink:
+          type: string
+        demoVideoUrl:
+          type: string
+        attachmentUrls:
+          type: array
+          items:
+            type: string
+        trackIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    SubmissionUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        tagline:
+          type: string
+        description:
+          type: string
+        technologies:
+          type: array
+          items:
+            type: string
+        repoLink:
+          type: string
+        demoVideoUrl:
+          type: string
+        attachmentUrls:
+          type: array
+          items:
+            type: string
+    EligibilityUpdateRequest:
+      type: object
+      required:
+      - eligibilityStatus
+      properties:
+        eligibilityStatus:
+          type: string
+          enum:
+          - eligible
+          - disqualified
+        reason:
+          type: string
+    PaginatedSubmissions:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Submission'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    SubmissionTrackRequest:
+      type: object
+      required:
+      - trackId
+      properties:
+        trackId:
+          type: string
+          format: uuid
+    SubmissionTrack:
+      type: object
+      properties:
+        submissionId:
+          type: string
+          format: uuid
+        trackId:
+          type: string
+          format: uuid
+    JudgingRound:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        hackathonId:
+          type: string
+          format: uuid
+        trackId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+          enum:
+          - not_started
+          - open
+          - closed
+    JudgingRoundCreateRequest:
+      type: object
+      required:
+      - hackathonId
+      properties:
+        hackathonId:
+          type: string
+          format: uuid
+        trackId:
+          type: string
+          format: uuid
+          nullable: true
+    PaginatedJudgingRounds:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/JudgingRound'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    JudgingCriterion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        roundId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        maxScore:
+          type: integer
+    JudgingCriterionCreateRequest:
+      type: object
+      required:
+      - name
+      - maxScore
+      properties:
+        name:
+          type: string
+        maxScore:
+          type: integer
+    PaginatedJudgingCriteria:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/JudgingCriterion'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    Score:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        submissionId:
+          type: string
+          format: uuid
+        judgeUserId:
+          type: string
+          format: uuid
+        criterionId:
+          type: string
+          format: uuid
+        scoreValue:
+          type: integer
+        comment:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ScoreCreateRequest:
+      type: object
+      required:
+      - criterionId
+      - scoreValue
+      properties:
+        criterionId:
+          type: string
+          format: uuid
+        scoreValue:
+          type: integer
+        comment:
+          type: string
+    PaginatedScores:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Score'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    JudgeInvitationCreateRequest:
+      type: object
+      required:
+      - email
+      - roundId
+      properties:
+        email:
+          type: string
+          format: email
+        roundId:
+          type: string
+          format: uuid
+    JudgeInvitation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        roundId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - sent
+          - accepted
+          - expired
+        invitedAt:
+          type: string
+          format: date-time
+    AnalyticsResponse:
+      type: object
+      properties:
+        hackathonId:
+          type: string
+          format: uuid
+        registrationTrend:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              count:
+                type: integer
+        registrationToSubmissionConversionRate:
+          type: number
+        demographics:
+          type: object
+          properties:
+            byUniversity:
+              type: object
+              additionalProperties:
+                type: integer
+            byRegion:
+              type: object
+              additionalProperties:
+                type: integer
+        teamSizeDistribution:
+          type: object
+          additionalProperties:
+            type: integer
+    NotificationCreateRequest:
+      type: object
+      required:
+      - hackathonId
+      - message
+      properties:
+        hackathonId:
+          type: string
+          format: uuid
+        message:
+          type: string
+        channel:
+          type: string
+          enum:
+          - email
+          - in_portal
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        hackathonId:
+          type: string
+          format: uuid
+        message:
+          type: string
+        channel:
+          type: string
+          enum:
+          - email
+          - in_portal
+        createdAt:
+          type: string
+          format: date-time
+    Mentor:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        skills:
+          type: array
+          items:
+            type: string
+        availability:
+          type: string
+    PaginatedMentors:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mentor'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    PaymentCreateRequest:
+      type: object
+      required:
+      - hackathonId
+      - recipientUserId
+      - amount
+      - currency
+      - gateway
+      properties:
+        hackathonId:
+          type: string
+          format: uuid
+        recipientUserId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+        currency:
+          type: string
+          example: ETB
+        gateway:
+          type: string
+          enum:
+          - telebirr
+          - cbe_birr
+          - chapa
+    PaymentTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        hackathonId:
+          type: string
+          format: uuid
+        recipientUserId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+        currency:
+          type: string
+        gateway:
+          type: string
+          enum:
+          - telebirr
+          - cbe_birr
+          - chapa
+        status:
+          type: string
+          enum:
+          - pending
+          - completed
+          - failed
+        createdAt:
+          type: string
+          format: date-time

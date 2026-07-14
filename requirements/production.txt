@@ -1,0 +1,4 @@
+-r base.txt
+
+gunicorn>=22.0
+sentry-sdk>=2.10
