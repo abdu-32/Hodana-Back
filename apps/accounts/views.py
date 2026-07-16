@@ -3,6 +3,8 @@ HTTP concerns only: routing to a service call, permission checks, and
 response status codes. No business logic here (Design Spec Sec 3.1).
 """
 
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers as drf_serializers
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -23,6 +25,10 @@ class SignupView(APIView):
 
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        request=serializers.SignupSerializer,
+        responses={201: serializers.UserProfileSerializer},
+    )
     def post(self, request):
         serializer = serializers.SignupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -47,6 +53,10 @@ class LoginView(APIView):
 
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        request=serializers.LoginSerializer,
+        responses={200: serializers.AuthResponseSerializer},
+    )
     def post(self, request):
         serializer = serializers.LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -63,6 +73,11 @@ class RefreshView(APIView):
 
     permission_classes = [AllowAny]
 
+
+    @extend_schema(
+        request=serializers.RefreshSerializer,
+        responses={200: serializers.AuthResponseSerializer},
+    )
     def post(self, request):
         serializer = serializers.RefreshSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -78,6 +93,11 @@ class VerifyEmailView(APIView):
 
     permission_classes = [AllowAny]
 
+
+    @extend_schema(
+        request=serializers.VerifyEmailSerializer,
+        responses={200: serializers.UserProfileSerializer},
+    )
     def post(self, request):
         serializer = serializers.VerifyEmailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -93,6 +113,11 @@ class ResendVerificationView(APIView):
     throttle_classes = [FiveMinuteScopedRateThrottle]
     throttle_scope = "email_verification_resend"
 
+
+    @extend_schema(
+        request=serializers.ResendVerificationSerializer,
+        responses={202: None},
+    )
     def post(self, request):
         serializer = serializers.ResendVerificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -107,6 +132,14 @@ class PasswordResetRequestView(APIView):
 
     permission_classes = [AllowAny]
 
+
+    @extend_schema(
+        request=serializers.PasswordResetRequestSerializer,
+        responses={200: inline_serializer(
+            name="PasswordResetRequestResponse",
+            fields={"message": drf_serializers.CharField()},
+        )},
+    )
     def post(self, request):
         serializer = serializers.PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -120,6 +153,10 @@ class PasswordResetConfirmView(APIView):
 
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        request=serializers.PasswordResetConfirmSerializer,
+        responses={200: None},
+    )
     def post(self, request):
         serializer = serializers.PasswordResetConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -140,9 +177,15 @@ class CurrentUserView(APIView):
     the project default (IsAuthenticated) already gives an unauthenticated
     request a 401 with no extra code needed here."""
 
+
+    @extend_schema(responses={200: serializers.UserProfileSerializer})
     def get(self, request):
         return Response(serializers.UserProfileSerializer(request.user).data)
-
+    
+    @extend_schema(
+        request=serializers.UserUpdateSerializer,
+        responses={200: serializers.UserProfileSerializer},
+    )
     def put(self, request):
         serializer = serializers.UserUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -157,7 +200,8 @@ class UserPublicProfileView(APIView):
     flagging the contract as needing that override added."""
 
     permission_classes = [AllowAny]
-
+    
+    @extend_schema(responses={200: serializers.PublicProfileSerializer})
     def get(self, request, id):
         account = services.get_public_profile(account_id=id)
         return Response(serializers.PublicProfileSerializer(account).data)

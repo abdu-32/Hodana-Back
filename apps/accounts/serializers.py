@@ -10,6 +10,7 @@ into services.py without any extra translation step.
 """
 
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 
 from .models import Badge
 
@@ -99,6 +100,7 @@ class UserProfileSerializer(serializers.Serializer):
     verificationStatus = serializers.CharField(source="verification_status", read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
 
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
     def get_roles(self, account):
         """Design Spec Sec 4.3: Participant is implicit (no RoleAssignment
         row); Platform Admin is the global boolean flag; everything else
