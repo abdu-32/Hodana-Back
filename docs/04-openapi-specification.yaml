@@ -68,7 +68,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthResponse'
+                $ref: '#/components/schemas/UserProfile'
         '400':
           $ref: '#/components/responses/BadRequest'
         '409':
@@ -120,6 +120,86 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /auth/verify-email:
+    post:
+      tags:
+      - Auth
+      security: []
+      operationId: verifyEmail
+      summary: Confirm a verification link and activate the account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /auth/verify-email/resend:
+    post:
+      tags:
+      - Auth
+      security: []
+      operationId: resendVerificationEmail
+      summary: Request a new verification email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendVerificationRequest'
+      responses:
+        '202':
+          description: Accepted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /auth/password-reset:
+    post:
+      tags:
+      - Auth
+      security: []
+      operationId: requestPasswordReset
+      summary: Request a password reset link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /auth/password-reset/confirm:
+    post:
+      tags:
+      - Auth
+      security: []
+      operationId: confirmPasswordReset
+      summary: Set a new password using a reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+      responses:
+        '200':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
   /users/me:
     get:
       tags:
@@ -161,6 +241,7 @@ paths:
     get:
       tags:
       - Users
+      security: []
       operationId: getUserById
       summary: View another user's public profile
       parameters:
@@ -1092,6 +1173,45 @@ components:
       properties:
         refreshToken:
           type: string
+    VerifyEmailRequest:
+      type: object
+      required:
+      - token
+      properties:
+        token:
+          type: string
+    ResendVerificationRequest:
+      type: object
+      required:
+      - email
+      properties:
+        email:
+          type: string
+          format: email
+    PasswordResetRequest:
+      type: object
+      required:
+      - email
+      properties:
+        email:
+          type: string
+          format: email
+    PasswordResetResponse:
+      type: object
+      properties:
+        message:
+          type: string
+    PasswordResetConfirmRequest:
+      type: object
+      required:
+      - token
+      - newPassword
+      properties:
+        token:
+          type: string
+        newPassword:
+          type: string
+          format: password
     AuthResponse:
       type: object
       properties:
@@ -1158,6 +1278,8 @@ components:
           items:
             type: string
         avatarUrl:
+          type: string
+        portfolioUrl:
           type: string
         contactEmail:
           type: string

@@ -13,6 +13,7 @@ is generic instead of per-endpoint:
 }
 """
 
+from rest_framework.exceptions import ValidationError
 from rest_framework.views import exception_handler
 
 
@@ -21,9 +22,14 @@ def api_exception_handler(exc, context):
     if response is None:
         return None
 
+    if isinstance(exc, ValidationError):
+        code = "VALIDATION_ERROR"
+    else:
+        code = getattr(exc, "default_code", "error").upper()
+
     response.data = {
         "error": {
-            "code": getattr(exc, "default_code", "error").upper(),
+            "code": code,
             "message": str(exc),
             "details": response.data,
         }

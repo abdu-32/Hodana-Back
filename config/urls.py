@@ -1,27 +1,19 @@
-"""
-Root URLconf. Every Django app's own urls.py is included under
-/api/v1/<app-name>/, mirroring the module boundaries in Design Spec Sec 3.2
-so the API surface maps predictably to Document 04 (OpenAPI Specification).
-"""
-
 from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
-from rest_framework_simplejwt.views import TokenRefreshView
+# TokenRefreshView import removed -- accounts.views.RefreshView replaces it
+# (contract shape + token_version check; see apps/accounts/services.py)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
 
-    # Contract-first: this endpoint is introspected live from the actual
-    # views/serializers below, then exported to contracts/openapi.yaml via
-    # `scripts/export_contract.sh`. That exported file is the one thing the
-    # frontend repo consumes — see innovation-hub-frontend/scripts/sync-contract.sh.
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/schema/swagger-ui/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
 
-    # Auth (login/refresh) — FR-AUTH, Design Spec Sec 4.1-4.2
-    path("api/v1/auth/", include("apps.accounts.urls")),
-    path("api/v1/auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    # Accounts app owns both Auth and Users (Doc 04) -- mounted at api/v1/
+    # root, not api/v1/auth/, so its internal "auth/..." and "users/..."
+    # prefixes resolve to api/v1/auth/... and api/v1/users/... correctly.
+    path("api/v1/", include("apps.accounts.urls")),
 
     path("api/v1/organizations/", include("apps.organizations.urls")),
     path("api/v1/hackathons/", include("apps.hackathons.urls")),
