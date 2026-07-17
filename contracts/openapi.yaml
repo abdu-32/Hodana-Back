@@ -202,6 +202,147 @@ paths:
       responses:
         '202':
           description: No response body
+  /api/v1/organizations/:
+    post:
+      operationId: v1_organizations_create
+      description: |-
+        POST /organizations -- FR-ORG-001. Not yet in Doc 04; add it.
+        No GET/list here -- there's no FR calling for a public org directory,
+        only lookup-by-id (below) for badge display on pages that reference one.
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterOrganization'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RegisterOrganization'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RegisterOrganization'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+          description: ''
+  /api/v1/organizations/{id}:
+    get:
+      operationId: v1_organizations_retrieve
+      description: |-
+        GET /organizations/{id} -- not tied to a single FR by number, but
+        required for the "Verified badge on every public page referencing
+        them" acceptance criterion in FR-ORG-002. Not yet in Doc 04; add it.
+        Public (AllowAny): the badge is meant to be visible to anonymous
+        visitors browsing hackathons/orgs, same reasoning as
+        accounts.UserPublicProfileView.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+          description: ''
+  /api/v1/organizations/{id}/verification-documents:
+    post:
+      operationId: v1_organizations_verification_documents_create
+      description: |-
+        POST /organizations/{id}/verification-documents -- FR-ORG-003.
+        Not yet in Doc 04; add it. Restricted to an Organizer scoped to this
+        org (HasScopedRole checks apps.accounts.RoleAssignment, never a token
+        claim, per Design Spec Sec 4.3); services.py re-checks the same thing
+        for defense-in-depth, matching the pattern already used for
+        is_platform_admin checks elsewhere in this codebase.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitVerificationDocuments'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SubmitVerificationDocuments'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SubmitVerificationDocuments'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrgVerificationDocument'
+          description: ''
+  /api/v1/organizations/{id}/verification-review:
+    post:
+      operationId: v1_organizations_verification_review_create
+      description: |-
+        POST /organizations/{id}/verification-review -- FR-ORG-003. Not yet
+        in Doc 04; add it. This is the FR-ADMIN-001 dashboard's decision
+        action; it lives here (not in platform_admin) because the service
+        function it drives, services.review_organization_verification, is
+        itself owned by this app, same reasoning as accounts owning both the
+        Auth and Users tags.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewOrganizationVerification'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReviewOrganizationVerification'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReviewOrganizationVerification'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgVerificationReview'
+          description: ''
   /api/v1/users/{id}:
     get:
       operationId: v1_users_retrieve
@@ -305,7 +446,7 @@ components:
           format: uuid
           readOnly: true
         type:
-          $ref: '#/components/schemas/TypeEnum'
+          $ref: '#/components/schemas/BadgeTypeEnum'
         awardedAt:
           type: string
           format: date-time
@@ -315,6 +456,14 @@ components:
       - id
       - type
       - userId
+    BadgeTypeEnum:
+      enum:
+      - verified_student
+      - hackathon_veteran
+      type: string
+      description: |-
+        * `verified_student` - Verified Student
+        * `hackathon_veteran` - Hackathon Veteran
     Login:
       type: object
       properties:
@@ -335,6 +484,132 @@ components:
       - github
       type: string
       description: '* `github` - github'
+    OrgVerificationDocument:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        organizationId:
+          type: string
+          format: uuid
+          readOnly: true
+        fileUrl:
+          type: string
+          readOnly: true
+        uploadedByUserId:
+          type: string
+          format: uuid
+          readOnly: true
+        uploadedAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - fileUrl
+      - id
+      - organizationId
+      - uploadedAt
+      - uploadedByUserId
+    OrgVerificationReview:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        organizationId:
+          type: string
+          format: uuid
+          readOnly: true
+        reviewedByUserId:
+          type: string
+          format: uuid
+          readOnly: true
+        decision:
+          $ref: '#/components/schemas/OrgVerificationReviewDecisionEnum'
+        rejectionReason:
+          type: string
+          readOnly: true
+        reviewedAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - decision
+      - id
+      - organizationId
+      - rejectionReason
+      - reviewedAt
+      - reviewedByUserId
+    OrgVerificationReviewDecisionEnum:
+      enum:
+      - approved
+      - rejected
+      type: string
+      description: |-
+        * `approved` - Approved
+        * `rejected` - Rejected
+    Organization:
+      type: object
+      description: |-
+        Doc 04's `Organization` schema only declares id/name/type/contactEmail
+        -- missing primaryEmailDomain, verificationStatus, and verifiedAt, all of
+        which are load-bearing here (FR-ORG-002's "Verified badge on every public
+        page" is meaningless without exposing verification_status). Flagging as
+        a contract gap to add to Doc 04/contracts/openapi.yaml rather than
+        silently under-serializing to match the stale contract.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 255
+        type:
+          $ref: '#/components/schemas/OrganizationTypeEnum'
+        contactEmail:
+          type: string
+          format: email
+          readOnly: true
+        primaryEmailDomain:
+          type: string
+          readOnly: true
+          nullable: true
+        verificationStatus:
+          type: string
+          readOnly: true
+        verifiedAt:
+          type: string
+          format: date-time
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - contactEmail
+      - createdAt
+      - id
+      - name
+      - primaryEmailDomain
+      - type
+      - verificationStatus
+      - verifiedAt
+    OrganizationTypeEnum:
+      enum:
+      - university
+      - company
+      - ngo
+      - government
+      type: string
+      description: |-
+        * `university` - University
+        * `company` - Company
+        * `ngo` - NGO
+        * `government` - Government
     PasswordResetConfirm:
       type: object
       properties:
@@ -415,6 +690,37 @@ components:
           type: string
       required:
       - refreshToken
+    RegisterOrganization:
+      type: object
+      description: POST /organizations request body -- FR-ORG-001.
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        type:
+          $ref: '#/components/schemas/RegisterOrganizationTypeEnum'
+        contactEmail:
+          type: string
+          format: email
+        primaryEmailDomain:
+          type: string
+          nullable: true
+      required:
+      - contactEmail
+      - name
+      - type
+    RegisterOrganizationTypeEnum:
+      enum:
+      - university
+      - company
+      - ngo
+      - government
+      type: string
+      description: |-
+        * `university` - university
+        * `company` - company
+        * `ngo` - ngo
+        * `government` - government
     ResendVerification:
       type: object
       properties:
@@ -423,6 +729,27 @@ components:
           format: email
       required:
       - email
+    ReviewOrganizationVerification:
+      type: object
+      description: |-
+        POST /organizations/{id}/verification-review -- FR-ORG-003.
+        Not yet in Doc 04; add it there.
+      properties:
+        decision:
+          $ref: '#/components/schemas/ReviewOrganizationVerificationDecisionEnum'
+        rejectionReason:
+          type: string
+          nullable: true
+      required:
+      - decision
+    ReviewOrganizationVerificationDecisionEnum:
+      enum:
+      - approved
+      - rejected
+      type: string
+      description: |-
+        * `approved` - approved
+        * `rejected` - rejected
     Signup:
       type: object
       properties:
@@ -446,14 +773,22 @@ components:
       required:
       - email
       - password
-    TypeEnum:
-      enum:
-      - verified_student
-      - hackathon_veteran
-      type: string
+    SubmitVerificationDocuments:
+      type: object
       description: |-
-        * `verified_student` - Verified Student
-        * `hackathon_veteran` - Hackathon Veteran
+        POST /organizations/{id}/verification-documents -- FR-ORG-003.
+        Not yet in Doc 04; add it there. `fileUrls` are object-storage pointers
+        already uploaded direct-to-storage (Design Spec Sec 6.3/ADR-005), not
+        raw file bytes -- this endpoint just records them.
+      properties:
+        fileUrls:
+          type: array
+          items:
+            type: string
+          maxItems: 3
+          minItems: 1
+      required:
+      - fileUrls
     UserProfile:
       type: object
       description: |-

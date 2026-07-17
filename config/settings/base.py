@@ -246,3 +246,19 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@innovationhub.local")
+
+# --------------------------------------------------------------------------
+# FR-ORG-002 — recognized institutional domains for auto-verification.
+# Comma-separated in RECOGNIZED_INSTITUTIONAL_DOMAINS env var, e.g.:
+#   RECOGNIZED_INSTITUTIONAL_DOMAINS=aau.edu.et,aastu.edu.et,bdu.edu.et
+# The two defaults below are only a working example (both confirmed live
+# domains) -- this is a business/partnerships decision, not an engineering
+# one, and the real list should be compiled and signed off by whoever owns
+# the university/government relationships (Doc 10 Sec 5), then set via env
+# rather than expanded here.
+# --------------------------------------------------------------------------
+
+RECOGNIZED_INSTITUTIONAL_DOMAINS = env.list(
+    "RECOGNIZED_INSTITUTIONAL_DOMAINS",
+    default=["aau.edu.et", "aastu.edu.et"],
+)

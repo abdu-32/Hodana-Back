@@ -1,7 +1,25 @@
-from rest_framework.routers import DefaultRouter
+"""
+Mounted at api/v1/organizations/ in config/urls.py, so every path below
+is relative to that prefix.
+"""
+
+from django.urls import path
+
+from . import views
 
 app_name = "organizations"
-router = DefaultRouter()
-# router.register("example", views.ExampleViewSet, basename="example")
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("", views.OrganizationListCreateView.as_view(), name="list-create"),
+    path("<uuid:id>", views.OrganizationDetailView.as_view(), name="detail"),
+    path(
+        "<uuid:id>/verification-documents",
+        views.OrganizationVerificationDocumentsView.as_view(),
+        name="verification-documents",
+    ),
+    path(
+        "<uuid:id>/verification-review",
+        views.OrganizationVerificationReviewView.as_view(),
+        name="verification-review",
+    ),
+]
