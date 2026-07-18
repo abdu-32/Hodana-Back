@@ -202,6 +202,186 @@ paths:
       responses:
         '202':
           description: No response body
+  /api/v1/hackathons/:
+    get:
+      operationId: v1_hackathons_retrieve
+      description: |-
+        GET /hackathons -- FR-DISC-001/002 (public). POST /hackathons --
+        FR-HACK-001 (organizer only; enforced in services.py since the target
+        organization is in the request body, not the URL -- HasScopedRole
+        needs a URL kwarg to resolve scope_id from, same reasoning as
+        organizations.OrganizationListCreateView's POST).
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedHackathons'
+          description: ''
+    post:
+      operationId: v1_hackathons_create
+      description: |-
+        GET /hackathons -- FR-DISC-001/002 (public). POST /hackathons --
+        FR-HACK-001 (organizer only; enforced in services.py since the target
+        organization is in the request body, not the URL -- HasScopedRole
+        needs a URL kwarg to resolve scope_id from, same reasoning as
+        organizations.OrganizationListCreateView's POST).
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HackathonCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/HackathonCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/HackathonCreate'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hackathon'
+          description: ''
+  /api/v1/hackathons/{id}:
+    get:
+      operationId: v1_hackathons_retrieve_2
+      description: GET (public for published hackathons) / PUT / DELETE /hackathons/{id}.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hackathon'
+          description: ''
+    put:
+      operationId: v1_hackathons_update
+      description: GET (public for published hackathons) / PUT / DELETE /hackathons/{id}.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HackathonUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/HackathonUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/HackathonUpdate'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Hackathon'
+          description: ''
+    delete:
+      operationId: v1_hackathons_destroy
+      description: GET (public for published hackathons) / PUT / DELETE /hackathons/{id}.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/hackathons/{id}/tracks:
+    get:
+      operationId: v1_hackathons_tracks_retrieve
+      description: GET (public) / POST /hackathons/{id}/tracks -- FR-TRACK-001.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedChallengeTracks'
+          description: ''
+    post:
+      operationId: v1_hackathons_tracks_create
+      description: GET (public) / POST /hackathons/{id}/tracks -- FR-TRACK-001.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallengeTrackCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChallengeTrackCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ChallengeTrackCreate'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChallengeTrack'
+          description: ''
   /api/v1/organizations/:
     post:
       operationId: v1_organizations_create
@@ -464,6 +644,293 @@ components:
       description: |-
         * `verified_student` - Verified Student
         * `hackathon_veteran` - Hackathon Veteran
+    ChallengeTrack:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        hackathonId:
+          type: string
+          format: uuid
+          readOnly: true
+        sponsorOrgId:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        prize:
+          type: string
+        rubricReference:
+          type: string
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - createdAt
+      - hackathonId
+      - id
+      - name
+      - rubricReference
+      - sponsorOrgId
+    ChallengeTrackCreate:
+      type: object
+      properties:
+        sponsorOrgId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          default: ''
+        prize:
+          type: string
+          default: ''
+        rubricReference:
+          type: string
+          default: ''
+      required:
+      - name
+      - sponsorOrgId
+    Hackathon:
+      type: object
+      description: |-
+        Doc 04's `Hackathon` schema declares `eligibilityRules` as a plain
+        string (it's actually JSONB per DB Design) and omits
+        `showcasePublishedAt`/`updatedAt`, both load-bearing here (BR-004's
+        publish gate, FR-SHOWCASE-001's visibility gate). Same "flag the
+        contract gap, don't under-serialize" call as
+        organizations.OrganizationSerializer.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        hostOrgId:
+          type: string
+          format: uuid
+          readOnly: true
+        slug:
+          type: string
+          maxLength: 255
+          pattern: ^[-a-zA-Z0-9_]+$
+        bannerUrl:
+          type: string
+          readOnly: true
+        registrationOpensAt:
+          type: string
+          format: date-time
+          readOnly: true
+        registrationClosesAt:
+          type: string
+          format: date-time
+          readOnly: true
+        submissionOpensAt:
+          type: string
+          format: date-time
+          readOnly: true
+        submissionClosesAt:
+          type: string
+          format: date-time
+          readOnly: true
+        rules:
+          type: string
+        prizeInfo:
+          type: string
+          readOnly: true
+        locationMode:
+          type: string
+          readOnly: true
+        eligibilityRules:
+          readOnly: true
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        status:
+          $ref: '#/components/schemas/HackathonStatusEnum'
+        showcasePublishedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        createdByUserId:
+          type: string
+          format: uuid
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - bannerUrl
+      - createdAt
+      - createdByUserId
+      - eligibilityRules
+      - hostOrgId
+      - id
+      - locationMode
+      - prizeInfo
+      - registrationClosesAt
+      - registrationOpensAt
+      - showcasePublishedAt
+      - slug
+      - submissionClosesAt
+      - submissionOpensAt
+      - title
+      - updatedAt
+    HackathonCreate:
+      type: object
+      description: |-
+        POST /hackathons -- FR-HACK-001. Only the contract's required set
+        (title, hostOrgId, the four timeline fields) is enforced here; the
+        fuller "complete hackathon" checklist (eligibility rules, rubric) is
+        FR-HACK-005's publish-time gate, enforced in services.py -- see
+        create_hackathon's docstring.
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          default: ''
+        hostOrgId:
+          type: string
+          format: uuid
+        slug:
+          nullable: true
+          oneOf:
+          - type: string
+            maxLength: 255
+            pattern: ^[-a-zA-Z0-9_]+$
+          - type: string
+            maxLength: 0
+        bannerUrl:
+          type: string
+          default: ''
+        registrationOpensAt:
+          type: string
+          format: date-time
+        registrationClosesAt:
+          type: string
+          format: date-time
+        submissionOpensAt:
+          type: string
+          format: date-time
+        submissionClosesAt:
+          type: string
+          format: date-time
+        rules:
+          type: string
+          default: ''
+        prizeInfo:
+          type: string
+          default: ''
+        locationMode:
+          allOf:
+          - $ref: '#/components/schemas/LocationModeEnum'
+          default: online
+        eligibilityRules:
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+      required:
+      - hostOrgId
+      - registrationClosesAt
+      - registrationOpensAt
+      - submissionClosesAt
+      - submissionOpensAt
+      - title
+    HackathonStatusEnum:
+      enum:
+      - draft
+      - published
+      - archived
+      type: string
+      description: |-
+        * `draft` - Draft
+        * `published` - Published
+        * `archived` - Archived
+    HackathonUpdate:
+      type: object
+      description: |-
+        PUT /hackathons/{id} -- FR-HACK-002/003/005. All fields optional
+        (partial update); `status` is how FR-HACK-005 publish/unpublish/archive
+        transitions are driven, since Doc 04 has no dedicated /publish
+        endpoint -- see update_hackathon's docstring.
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        bannerUrl:
+          type: string
+        registrationOpensAt:
+          type: string
+          format: date-time
+        registrationClosesAt:
+          type: string
+          format: date-time
+        submissionOpensAt:
+          type: string
+          format: date-time
+        submissionClosesAt:
+          type: string
+          format: date-time
+        rules:
+          type: string
+        prizeInfo:
+          type: string
+        eligibilityRules:
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        status:
+          $ref: '#/components/schemas/HackathonUpdateStatusEnum'
+    HackathonUpdateStatusEnum:
+      enum:
+      - draft
+      - published
+      - archived
+      type: string
+      description: |-
+        * `draft` - draft
+        * `published` - published
+        * `archived` - archived
+    LocationModeEnum:
+      enum:
+      - online
+      - in_person
+      - hybrid
+      type: string
+      description: |-
+        * `online` - online
+        * `in_person` - in_person
+        * `hybrid` - hybrid
     Login:
       type: object
       properties:
@@ -610,6 +1077,49 @@ components:
         * `company` - Company
         * `ngo` - NGO
         * `government` - Government
+    PaginatedChallengeTracks:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChallengeTrack'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+      required:
+      - data
+      - meta
+    PaginatedHackathons:
+      type: object
+      description: |-
+        {data, meta} envelope per Doc 04. Built manually in the view rather
+        than via DRF's PageNumberPagination, since that class's
+        {count,next,previous,results} shape doesn't match this contract --
+        first list endpoint in the codebase, so no existing pagination
+        precedent to follow instead.
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Hackathon'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+      required:
+      - data
+      - meta
+    PaginationMeta:
+      type: object
+      properties:
+        limit:
+          type: integer
+        offset:
+          type: integer
+        total:
+          type: integer
+      required:
+      - limit
+      - offset
+      - total
     PasswordResetConfirm:
       type: object
       properties:
