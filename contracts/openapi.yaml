@@ -602,6 +602,235 @@ paths:
                 items:
                   $ref: '#/components/schemas/Registration'
           description: ''
+  /api/v1/teams/{team_id}:
+    get:
+      operationId: v1_teams_retrieve
+      description: |-
+        GET /teams/{team_id} -- FR-TEAM-005. Roster visible only to team
+        members and the hackathon's Organizer; anyone else gets 403.
+      parameters:
+      - in: path
+        name: team_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamRoster'
+          description: ''
+  /api/v1/teams/{team_id}/invitations:
+    get:
+      operationId: v1_teams_invitations_list
+      description: |-
+        POST /teams/{team_id}/invitations -- FR-TEAM-002.
+        GET  /teams/{team_id}/invitations -- pending invitations, owner-only.
+      parameters:
+      - in: path
+        name: team_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TeamMember'
+          description: ''
+    post:
+      operationId: v1_teams_invitations_create
+      description: |-
+        POST /teams/{team_id}/invitations -- FR-TEAM-002.
+        GET  /teams/{team_id}/invitations -- pending invitations, owner-only.
+      parameters:
+      - in: path
+        name: team_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteMember'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InviteMember'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InviteMember'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMember'
+          description: ''
+  /api/v1/teams/{team_id}/leave:
+    post:
+      operationId: v1_teams_leave_create
+      description: POST /teams/{team_id}/leave -- FR-TEAM-004.
+      parameters:
+      - in: path
+        name: team_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/teams/{team_id}/members/{user_id}:
+    delete:
+      operationId: v1_teams_members_destroy
+      description: DELETE /teams/{team_id}/members/{user_id} -- FR-TEAM-004, owner-only.
+      parameters:
+      - in: path
+        name: team_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: user_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/teams/hackathons/{hackathon_id}:
+    post:
+      operationId: v1_teams_hackathons_create
+      description: |-
+        POST /teams/hackathons/{hackathon_id} -- FR-TEAM-001.
+        Not yet in Doc 04/contracts/openapi.yaml -- this app owns its own url
+        prefix per config/urls.py, same deviation pattern as
+        apps.registrations.views.HackathonRegistrationView.
+      parameters:
+      - in: path
+        name: hackathon_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeam'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CreateTeam'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateTeam'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+          description: ''
+  /api/v1/teams/invitations/{invitation_id}/accept:
+    post:
+      operationId: v1_teams_invitations_accept_create
+      description: POST /teams/invitations/{invitation_id}/accept -- FR-TEAM-003.
+      parameters:
+      - in: path
+        name: invitation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMember'
+          description: ''
+  /api/v1/teams/invitations/{invitation_id}/decline:
+    post:
+      operationId: v1_teams_invitations_decline_create
+      description: POST /teams/invitations/{invitation_id}/decline -- FR-TEAM-003.
+      parameters:
+      - in: path
+        name: invitation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMember'
+          description: ''
+  /api/v1/teams/invitations/me:
+    get:
+      operationId: v1_teams_invitations_me_list
+      description: |-
+        GET /teams/invitations/me -- pending invitations addressed to the
+        caller, across all hackathons. Strictly scoped to the requester, same
+        pattern as apps.registrations.views.MyRegistrationsView.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TeamMember'
+          description: ''
   /api/v1/users/{id}:
     get:
       operationId: v1_users_retrieve
@@ -780,6 +1009,16 @@ components:
       required:
       - name
       - sponsorOrgId
+    CreateTeam:
+      type: object
+      description: POST /teams/hackathons/{hackathonId} -- FR-TEAM-001.
+      properties:
+        teamName:
+          type: string
+          maxLength: 60
+          minLength: 3
+      required:
+      - teamName
     Hackathon:
       type: object
       description: |-
@@ -1000,6 +1239,17 @@ components:
         * `draft` - draft
         * `published` - published
         * `archived` - archived
+    InviteMember:
+      type: object
+      description: |-
+        POST /teams/{teamId}/invitations -- FR-TEAM-002. Invites by email
+        (Account has no username field, only email -- see services.py).
+      properties:
+        inviteeEmail:
+          type: string
+          format: email
+      required:
+      - inviteeEmail
     LocationModeEnum:
       enum:
       - online
@@ -1432,6 +1682,109 @@ components:
           minItems: 1
       required:
       - fileUrls
+    Team:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        hackathonId:
+          type: string
+          format: uuid
+          readOnly: true
+        teamName:
+          type: string
+          readOnly: true
+        leaderUserId:
+          type: string
+          format: uuid
+          readOnly: true
+        openToMembers:
+          type: boolean
+          readOnly: true
+        maxSize:
+          type: integer
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        memberCount:
+          type: string
+          readOnly: true
+      required:
+      - createdAt
+      - hackathonId
+      - id
+      - leaderUserId
+      - maxSize
+      - memberCount
+      - openToMembers
+      - teamName
+    TeamMember:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        teamId:
+          type: string
+          format: uuid
+          readOnly: true
+        userId:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        inviteeEmail:
+          type: string
+          format: email
+          readOnly: true
+        joinStatus:
+          type: string
+          readOnly: true
+        invitedAt:
+          type: string
+          format: date-time
+          readOnly: true
+        expiresAt:
+          type: string
+          format: date-time
+          readOnly: true
+        respondedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        role:
+          type: string
+          readOnly: true
+          nullable: true
+      required:
+      - expiresAt
+      - id
+      - invitedAt
+      - inviteeEmail
+      - joinStatus
+      - respondedAt
+      - role
+      - teamId
+      - userId
+    TeamRoster:
+      type: object
+      description: GET /teams/{teamId} response envelope -- FR-TEAM-005.
+      properties:
+        team:
+          $ref: '#/components/schemas/Team'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamMember'
+      required:
+      - members
+      - team
     UserProfile:
       type: object
       description: |-
