@@ -78,6 +78,38 @@ MVP institutional verification is domain-based or manual (visible as a "Verified
 
 Beyond the Phase 2 scheduling noted in Section 2, the actual matching mechanism (manual curation vs. rule-based matching vs. participant self-selection) is unspecified. This is deferred rather than merely scheduled because the right mechanism depends on data the MVP doesn't yet have — how many mentors sign up, how participants actually use the lightweight MVP mentor directory, and what matching friction they report. Designing the mechanism before that data exists risks over-building.
 
+### 3.4 Age and geographic eligibility restrictions
+
+**Status:** Open. **Decision owner:** Product Owner, with Tech Lead input on schema impact.
+
+FR-HACK-003 names age restriction and geographic restriction as two of the four
+fixed eligibility-rule criteria, alongside team size (enforced by apps.teams)
+and institution restriction (enforced by apps.registrations via email-domain
+matching, see services.py). Unlike those two, FR-HACK-003's acceptance
+criteria never specify how age/geographic restrictions are meant to be
+verified, and apps.accounts has no date_of_birth or country/location field
+in Document 05 to check against.
+
+This is deferred rather than guessed at because two different resolutions are
+both plausible and have different build costs:
+- Server-verified: requires new Account fields (date_of_birth, and a defined
+  representation for "geographic" -- country code, region, something else),
+  a migration to the live accounts app, and enforcement logic in
+  apps.registrations._check_eligibility.
+- Self-attested: Registration.eligibility_confirmed already exists and could
+  be documented as covering these two criteria, with no schema change at all.
+
+**Resolution criteria:** Product Owner picks one of the above; if
+server-verified, the concrete fields and format are specified here first,
+then promoted into Document 02/05 as real FR/DB changes before apps.accounts
+is touched.
+
+**Current behavior:** apps.registrations.services._check_eligibility only
+enforces institution_restriction. age_restriction/geographic_restriction keys
+in a hackathon's eligibility_rules are accepted (an Organizer can set them)
+but not checked against anything at registration time. This is called out
+explicitly in that function's docstring.
+
 ---
 
 ## 4. Traceability to MVP Scope Exclusions

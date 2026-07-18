@@ -523,6 +523,85 @@ paths:
               schema:
                 $ref: '#/components/schemas/OrgVerificationReview'
           description: ''
+  /api/v1/registrations/hackathons/{hackathon_id}:
+    post:
+      operationId: v1_registrations_hackathons_create
+      description: |-
+        POST /registrations/hackathons/{hackathon_id} -- FR-REG-001.
+        Not yet in Doc 04 (which only sketches /hackathons/{id}/register under
+        the Hackathons tag) -- this app owns its own url prefix per
+        config/urls.py, so the real path lives here; add it to Doc 04/
+        contracts/openapi.yaml once regenerated.
+      parameters:
+      - in: path
+        name: hackathon_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterForHackathon'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RegisterForHackathon'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RegisterForHackathon'
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+          description: ''
+  /api/v1/registrations/hackathons/{hackathon_id}/withdraw:
+    post:
+      operationId: v1_registrations_hackathons_withdraw_create
+      description: POST /registrations/hackathons/{hackathon_id}/withdraw -- FR-REG-002.
+      parameters:
+      - in: path
+        name: hackathon_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+          description: ''
+  /api/v1/registrations/me:
+    get:
+      operationId: v1_registrations_me_list
+      description: |-
+        GET /registrations/me -- FR-REG-003. Strictly scoped to the
+        requester (services.list_my_registrations filters by actor).
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Registration'
+          description: ''
   /api/v1/users/{id}:
     get:
       operationId: v1_users_retrieve
@@ -1200,6 +1279,15 @@ components:
           type: string
       required:
       - refreshToken
+    RegisterForHackathon:
+      type: object
+      description: POST /registrations/hackathons/{hackathonId} -- FR-REG-001.
+      properties:
+        eligibilityConfirmed:
+          type: boolean
+          default: false
+        customAnswers:
+          nullable: true
     RegisterOrganization:
       type: object
       description: POST /organizations request body -- FR-ORG-001.
@@ -1231,6 +1319,51 @@ components:
         * `company` - company
         * `ngo` - ngo
         * `government` - government
+    Registration:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        hackathonId:
+          type: string
+          format: uuid
+          readOnly: true
+        userId:
+          type: string
+          format: uuid
+          readOnly: true
+        eligibilityConfirmed:
+          type: boolean
+          readOnly: true
+        customAnswers:
+          readOnly: true
+        verificationStatus:
+          type: string
+          readOnly: true
+        registeredAt:
+          type: string
+          format: date-time
+          readOnly: true
+        withdrawnAt:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        status:
+          type: string
+          readOnly: true
+      required:
+      - customAnswers
+      - eligibilityConfirmed
+      - hackathonId
+      - id
+      - registeredAt
+      - status
+      - userId
+      - verificationStatus
+      - withdrawnAt
     ResendVerification:
       type: object
       properties:

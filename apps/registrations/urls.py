@@ -1,7 +1,24 @@
-from rest_framework.routers import DefaultRouter
+"""
+Mounted at api/v1/registrations/ in config/urls.py, so every path below
+is relative to that prefix.
+"""
+
+from django.urls import path
+
+from . import views
 
 app_name = "registrations"
-router = DefaultRouter()
-# router.register("example", views.ExampleViewSet, basename="example")
 
-urlpatterns = router.urls
+urlpatterns = [
+    path(
+        "hackathons/<uuid:hackathon_id>",
+        views.HackathonRegistrationView.as_view(),
+        name="register",
+    ),
+    path(
+        "hackathons/<uuid:hackathon_id>/withdraw",
+        views.HackathonRegistrationWithdrawView.as_view(),
+        name="withdraw",
+    ),
+    path("me", views.MyRegistrationsView.as_view(), name="my-registrations"),
+]

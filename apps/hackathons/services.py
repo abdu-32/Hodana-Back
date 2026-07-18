@@ -325,13 +325,8 @@ def _require_publish_ready(hackathon):
 
 
 def _registration_count(hackathon):
-    # TODO: apps.registrations doesn't implement the Registration model
-    # yet (still a stub). Wire this to
-    # Registration.objects.filter(hackathon=hackathon).count() once it
-    # does; until then this always returns 0, meaning "unpublish" is
-    # unconditionally allowed -- don't rely on this in production before
-    # fixing it.
-    return 0
+    from apps.registrations.models import Registration
+    return Registration.objects.filter(hackathon=hackathon, withdrawn_at__isnull=True).count()
 
 
 # ---- DELETE /hackathons/{id} ------------------------------------------------
