@@ -13,4 +13,5 @@ urlpatterns = [
     path("", views.HackathonListCreateView.as_view(), name="list-create"),
     path("<uuid:id>", views.HackathonDetailView.as_view(), name="detail"),
     path("<uuid:id>/tracks", views.ChallengeTrackListCreateView.as_view(), name="track-list-create"),
+    path("<uuid:id>/submissions", views.HackathonSubmissionScreeningView.as_view(), name="submission-screening"),
 ]

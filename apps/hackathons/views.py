@@ -123,3 +123,26 @@ class ChallengeTrackListCreateView(APIView):
             actor=request.user, hackathon_id=id, **serializer.validated_data,
         )
         return Response(serializers.ChallengeTrackSerializer(track).data, status=status.HTTP_201_CREATED)
+    
+
+class HackathonSubmissionScreeningView(APIView):
+    """GET /hackathons/{id}/submissions -- FR-ELIG-002 bulk screening
+    view. Organizer-only (enforced in services.py, default
+    IsAuthenticated permission class here, same pattern as this app's
+    other organizer-gated endpoints); one-click eligible/disqualify
+    actions per row are PUT /submissions/{id}/eligibility, owned by
+    apps.submissions per its own URL prefix -- see that app's views.py."""
+
+    @extend_schema(responses={200: serializers.PaginatedScreeningSubmissionsSerializer})
+    def get(self, request, id):
+        limit, offset = _pagination_params(request)
+        results, total = services.list_submissions_for_screening(
+            actor=request.user, hackathon_id=id,
+            eligibility_status=request.query_params.get("eligibilityStatus"),
+            limit=limit, offset=offset,
+        )
+        body = {
+            "data": serializers.ScreeningSubmissionSerializer(results, many=True).data,
+            "meta": {"limit": limit, "offset": offset, "total": total},
+        }
+        return Response(body)

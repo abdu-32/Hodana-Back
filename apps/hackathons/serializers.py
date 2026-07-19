@@ -142,3 +142,32 @@ class ChallengeTrackCreateSerializer(serializers.Serializer):
 class PaginatedChallengeTracksSerializer(serializers.Serializer):
     data = ChallengeTrackSerializer(many=True)
     meta = PaginationMetaSerializer()
+
+
+# --------------------------------------------------------------------------
+# Eligibility screening (FR-ELIG-001/002)
+# --------------------------------------------------------------------------
+
+
+class ScreeningSubmissionSerializer(serializers.Serializer):
+    """Row shape for the FR-ELIG-002 bulk screening view (GET
+    /hackathons/{id}/submissions). Deliberately a plain Serializer, not a
+    ModelSerializer against apps.submissions.Submission -- this module
+    never imports apps.submissions at module level (see services.py's
+    ELIG section docstring on the import-cycle risk), so it can't
+    reference the model class here either; field access instead relies
+    on DRF resolving `source` against whatever submission-like object is
+    passed in."""
+
+    id = serializers.UUIDField(read_only=True)
+    teamId = serializers.UUIDField(source="team_id", read_only=True)
+    title = serializers.CharField(read_only=True)
+    eligibilityStatus = serializers.CharField(source="eligibility_status", read_only=True)
+    eligibilityReason = serializers.CharField(source="eligibility_reason", read_only=True, allow_blank=True)
+    submittedAt = serializers.DateTimeField(source="submitted_at", read_only=True, allow_null=True)
+    lockedAt = serializers.DateTimeField(source="locked_at", read_only=True, allow_null=True)
+
+
+class PaginatedScreeningSubmissionsSerializer(serializers.Serializer):
+    data = ScreeningSubmissionSerializer(many=True)
+    meta = PaginationMetaSerializer()

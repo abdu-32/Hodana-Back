@@ -11,10 +11,13 @@ Hackathon is the tenant-scope anchor per Design Spec Sec 3.3 (scoped by
 host_org); ChallengeTrack is scoped by hackathon. Both declare a
 TenantScopedManager scope_field per that section.
 
-ELIG (FR-ELIG-001/002) is NOT implemented here: it operates on `locked`
-submissions (FR-SUB-003 precondition), and apps.submissions is still an
-unimplemented stub with no Submission model to reference. Revisit once
-that app exists.
+ELIG (FR-ELIG-001/002) is implemented in services.py
+(screen_submission / list_submissions_for_screening), not here: it
+reads/writes apps.submissions.models.Submission's eligibility_* columns
+via a local, deferred import (never a module-level one, to avoid a
+hackathons<->submissions import cycle -- see services.py's ELIG section
+docstring). Nothing ELIG-related lives on the Hackathon or ChallengeTrack
+models themselves.
 """
 
 import uuid

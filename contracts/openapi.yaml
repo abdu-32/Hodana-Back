@@ -326,6 +326,34 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/hackathons/{id}/submissions:
+    get:
+      operationId: v1_hackathons_submissions_retrieve
+      description: |-
+        GET /hackathons/{id}/submissions -- FR-ELIG-002 bulk screening
+        view. Organizer-only (enforced in services.py, default
+        IsAuthenticated permission class here, same pattern as this app's
+        other organizer-gated endpoints); one-click eligible/disqualify
+        actions per row are PUT /submissions/{id}/eligibility, owned by
+        apps.submissions per its own URL prefix -- see that app's views.py.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedScreeningSubmissions'
+          description: ''
   /api/v1/hackathons/{id}/tracks:
     get:
       operationId: v1_hackathons_tracks_retrieve
@@ -601,6 +629,216 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Registration'
+          description: ''
+  /api/v1/submissions/{submission_id}:
+    get:
+      operationId: v1_submissions_retrieve
+      description: |-
+        GET /submissions/{submission_id} -- visible to team members and
+        the hackathon's Organizer only (services._require_team_member_or_organizer).
+      parameters:
+      - in: path
+        name: submission_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+          description: ''
+  /api/v1/submissions/{submission_id}/eligibility:
+    put:
+      operationId: v1_submissions_eligibility_update
+      description: |-
+        PUT /submissions/{submission_id}/eligibility -- FR-ELIG-001.
+        Routing only: this endpoint lives under apps.submissions' URL prefix
+        (matching Doc 04's /submissions/{id}/eligibility path exactly, since
+        the resource being addressed is a submission), but the screening
+        business logic -- organizer permission, locked precondition, the
+        10-character disqualification-reason rule, and the audit log entry --
+        lives in apps.hackathons per Design Spec Sec 3.2's ELIG module
+        ownership. See apps.hackathons.services.screen_submission.
+      parameters:
+      - in: path
+        name: submission_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EligibilityUpdate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EligibilityUpdate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EligibilityUpdate'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+          description: ''
+  /api/v1/submissions/{submission_id}/finalize:
+    post:
+      operationId: v1_submissions_finalize_create
+      description: POST /submissions/{submission_id}/finalize -- FR-SUB-003.
+      parameters:
+      - in: path
+        name: submission_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+          description: ''
+  /api/v1/submissions/{submission_id}/history:
+    get:
+      operationId: v1_submissions_history_retrieve
+      description: |-
+        GET /submissions/{submission_id}/history -- FR-SUB-004, team
+        members and the Organizer only.
+      parameters:
+      - in: path
+        name: submission_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionHistory'
+          description: ''
+  /api/v1/submissions/{submission_id}/media:
+    post:
+      operationId: v1_submissions_media_create
+      description: POST /submissions/{submission_id}/media -- FR-SUB-002.
+      parameters:
+      - in: path
+        name: submission_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachMedia'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AttachMedia'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AttachMedia'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+          description: ''
+  /api/v1/submissions/hackathons/{hackathon_id}:
+    post:
+      operationId: v1_submissions_hackathons_create
+      description: |-
+        POST /submissions/hackathons/{hackathon_id} -- FR-SUB-001. Creates
+        the caller's team's submission, or updates it if one already exists.
+        Not yet in Doc 04/contracts/openapi.yaml -- this app owns its own url
+        prefix per config/urls.py, same deviation pattern as
+        apps.teams.views.TeamCreateView.
+      parameters:
+      - in: path
+        name: hackathon_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertSubmission'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UpsertSubmission'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UpsertSubmission'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+          description: ''
+  /api/v1/submissions/hackathons/{hackathon_id}/me:
+    get:
+      operationId: v1_submissions_hackathons_me_retrieve
+      description: |-
+        GET /submissions/hackathons/{hackathon_id}/me -- lets the caller's
+        team check whether a draft already exists before posting to
+        SubmissionUpsertView.
+      parameters:
+      - in: path
+        name: hackathon_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
           description: ''
   /api/v1/teams/{team_id}:
     get:
@@ -906,6 +1144,22 @@ paths:
           description: ''
 components:
   schemas:
+    AttachMedia:
+      type: object
+      description: |-
+        POST /submissions/{submissionId}/media -- FR-SUB-002. Replaces the
+        full attachment set (the client is expected to send the complete
+        desired list, same as `technologies` above), since neither FR-SUB-002
+        nor Doc 04 defines an incremental add/remove contract.
+      properties:
+        attachmentUrls:
+          type: array
+          items:
+            type: string
+            format: uri
+          maxItems: 5
+      required:
+      - attachmentUrls
     AuthResponse:
       type: object
       description: |-
@@ -1019,6 +1273,31 @@ components:
           minLength: 3
       required:
       - teamName
+    EligibilityStatusEnum:
+      enum:
+      - eligible
+      - disqualified
+      type: string
+      description: |-
+        * `eligible` - eligible
+        * `disqualified` - disqualified
+    EligibilityUpdate:
+      type: object
+      description: |-
+        PUT /submissions/{submissionId}/eligibility -- FR-ELIG-001. Request
+        shape only; the actual screening rules (locked precondition, reason
+        length, permissions, audit logging) live in
+        apps.hackathons.services.screen_submission -- see that app's ELIG
+        section for why ELIG logic lives there despite this being a
+        submissions-prefixed endpoint.
+      properties:
+        eligibilityStatus:
+          $ref: '#/components/schemas/EligibilityStatusEnum'
+        reason:
+          type: string
+          default: ''
+      required:
+      - eligibilityStatus
     Hackathon:
       type: object
       description: |-
@@ -1436,6 +1715,18 @@ components:
       required:
       - data
       - meta
+    PaginatedScreeningSubmissions:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScreeningSubmission'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+      required:
+      - data
+      - meta
     PaginationMeta:
       type: object
       properties:
@@ -1643,6 +1934,53 @@ components:
       description: |-
         * `approved` - approved
         * `rejected` - rejected
+    ScreeningSubmission:
+      type: object
+      description: |-
+        Row shape for the FR-ELIG-002 bulk screening view (GET
+        /hackathons/{id}/submissions). Deliberately a plain Serializer, not a
+        ModelSerializer against apps.submissions.Submission -- this module
+        never imports apps.submissions at module level (see services.py's
+        ELIG section docstring on the import-cycle risk), so it can't
+        reference the model class here either; field access instead relies
+        on DRF resolving `source` against whatever submission-like object is
+        passed in.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        teamId:
+          type: string
+          format: uuid
+          readOnly: true
+        title:
+          type: string
+          readOnly: true
+        eligibilityStatus:
+          type: string
+          readOnly: true
+        eligibilityReason:
+          type: string
+          readOnly: true
+        submittedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        lockedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - eligibilityReason
+      - eligibilityStatus
+      - id
+      - lockedAt
+      - submittedAt
+      - teamId
+      - title
     Signup:
       type: object
       properties:
@@ -1666,6 +2004,123 @@ components:
       required:
       - email
       - password
+    Submission:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        hackathonId:
+          type: string
+          format: uuid
+          readOnly: true
+        teamId:
+          type: string
+          format: uuid
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        tagline:
+          type: string
+          readOnly: true
+        description:
+          type: string
+        technologies:
+          type: array
+          items: {}
+          readOnly: true
+        repoLink:
+          type: string
+          readOnly: true
+        demoVideoUrl:
+          type: string
+          readOnly: true
+        attachmentUrls:
+          type: array
+          items: {}
+          readOnly: true
+        eligibilityStatus:
+          type: string
+          readOnly: true
+        eligibilityReason:
+          type: string
+          readOnly: true
+        isFinalized:
+          type: boolean
+          readOnly: true
+        submittedAt:
+          type: string
+          format: date-time
+          readOnly: true
+        lockedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - attachmentUrls
+      - createdAt
+      - demoVideoUrl
+      - eligibilityReason
+      - eligibilityStatus
+      - hackathonId
+      - id
+      - isFinalized
+      - lockedAt
+      - repoLink
+      - submittedAt
+      - tagline
+      - teamId
+      - technologies
+      - updatedAt
+    SubmissionHistory:
+      type: object
+      description: GET /submissions/{submissionId}/history response envelope -- FR-SUB-004.
+      properties:
+        submission:
+          $ref: '#/components/schemas/Submission'
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmissionVersion'
+      required:
+      - submission
+      - versions
+    SubmissionVersion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        editedByUserId:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - createdAt
+      - editedByUserId
+      - id
     SubmitVerificationDocuments:
       type: object
       description: |-
@@ -1785,6 +2240,49 @@ components:
       required:
       - members
       - team
+    UpsertSubmission:
+      type: object
+      description: |-
+        POST /submissions/hackathons/{hackathonId} -- FR-SUB-001.
+
+        Only `title` is required here: a draft may be saved incomplete.
+        FR-SUB-003's precondition ("has all required fields (FR-SUB-001)") is
+        what actually gates the full title+description+at-least-one-of
+        {repo,demo,media} requirement, enforced in services.finalize_submission
+        -- see models.py's module docstring for the full reasoning.
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        tagline:
+          type: string
+          default: ''
+          maxLength: 255
+        description:
+          type: string
+          default: ''
+          maxLength: 3000
+        technologies:
+          type: array
+          items:
+            type: string
+            maxLength: 100
+        repoLink:
+          oneOf:
+          - type: string
+            format: uri
+            default: ''
+          - type: string
+            maxLength: 0
+        demoVideoUrl:
+          oneOf:
+          - type: string
+            format: uri
+            default: ''
+          - type: string
+            maxLength: 0
+      required:
+      - title
     UserProfile:
       type: object
       description: |-

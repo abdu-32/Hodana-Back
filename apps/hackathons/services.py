@@ -401,3 +401,139 @@ def create_challenge_track(*, actor, hackathon_id, sponsor_org_id, name, descrip
         raise ValidationError({"name": "A track with this name already exists for this hackathon."})
 
     return track
+
+
+
+# ---- FR-ELIG-001/002: eligibility screening ---------------------------------
+#
+# Submission is apps.submissions' model, but per Design Spec Sec 3.2's
+# module-to-app mapping ELIG business logic lives here in apps.hackathons.
+# apps.submissions is a downstream dependency of apps.hackathons (via
+# apps.registrations/apps.teams), so importing apps.submissions.models at
+# module level here would create a hackathons<->submissions import cycle
+# (apps.submissions.services already imports apps.hackathons.models at
+# module level) -- every reference to it below is a local, deferred import
+# instead, same pattern as _registration_count's apps.registrations import.
+
+# FR-ELIG-001's disqualification reason: "at least 10 characters".
+MIN_DISQUALIFICATION_REASON_LENGTH = 10
+
+ELIGIBILITY_STATUS_CHOICES = ("pending", "eligible", "disqualified")
+
+
+def _get_submission_or_404(submission_id):
+    from apps.submissions.models import Submission
+
+    try:
+        return Submission.objects.select_related("hackathon", "hackathon__host_org").get(id=submission_id)
+    except (Submission.DoesNotExist, ValueError, DjangoValidationError):
+        raise NotFound()
+
+
+def _is_submission_locked(submission):
+    """FR-ELIG-001 precondition: the submission status is `locked`
+    (FR-SUB-003). Checked live against the hackathon's submission
+    deadline, same as apps.submissions.services._require_not_locked --
+    the Celery-Beat-driven `locked_at` write (DB Design Sec 4.6) isn't
+    the source of truth for this check since that job isn't implemented
+    yet; `locked_at` is honored too in case a future job does set it."""
+    return submission.locked_at is not None or timezone.now() >= submission.hackathon.submission_closes_at
+
+
+def screen_submission(*, actor, submission_id, eligibility_status, reason=""):
+    """PUT /submissions/{id}/eligibility -- FR-ELIG-001. Marks a locked
+    submission `eligible` or `disqualified`. Note the model default is
+    already `eligible` (BR-006: "screening is opt-out for compliant
+    submissions"), so this is only ever called to disqualify a submission
+    or to reinstate a previously-disqualified one.
+    """
+    submission = _get_submission_or_404(submission_id)
+    hackathon = submission.hackathon
+
+    if not _is_organizer_of_org(actor=actor, org_id=hackathon.host_org_id):
+        raise PermissionDenied("Only an Organizer of the host organization can screen submissions.")
+
+    if eligibility_status not in ("eligible", "disqualified"):
+        raise ValidationError({"eligibilityStatus": "Must be 'eligible' or 'disqualified'."})
+
+    # FR-ELIG-001 precondition.
+    if not _is_submission_locked(submission):
+        raise ValidationError(
+            "Only a locked submission (past the submission deadline) can be screened."
+        )
+
+    reason = (reason or "").strip()
+    if eligibility_status == "disqualified":
+        # FR-ELIG-001: "Disqualification requires a reason of at least 10
+        # characters, shown to the affected team."
+        if len(reason) < MIN_DISQUALIFICATION_REASON_LENGTH:
+            raise ValidationError({
+                "reason": f"A disqualification reason of at least {MIN_DISQUALIFICATION_REASON_LENGTH} characters is required.",
+            })
+    else:
+        # Reinstating to eligible clears any prior disqualification reason
+        # -- an eligible submission carrying a stale disqualification
+        # reason would be misleading to the team viewing it.
+        reason = ""
+
+    with transaction.atomic():
+        submission.eligibility_status = eligibility_status
+        submission.eligibility_reason = reason
+        submission.eligibility_reviewed_by = actor
+        submission.eligibility_reviewed_at = timezone.now()
+        submission.save(update_fields=[
+            "eligibility_status", "eligibility_reason", "eligibility_reviewed_by", "eligibility_reviewed_at",
+        ])
+        AuditLogEntry.objects.create(
+            actor_id=actor.id, action="submission.eligibility_screened",
+            target_type="submission", target_id=str(submission.id),
+            metadata={"eligibilityStatus": eligibility_status, "reason": reason},
+        )
+
+    return submission
+
+
+def list_submissions_for_screening(*, actor, hackathon_id, eligibility_status=None, limit=20, offset=0):
+    """GET /hackathons/{id}/submissions -- FR-ELIG-002 bulk screening
+    view. Organizer-only listing of a hackathon's locked submissions
+    (the pool FR-ELIG-001 actually operates on), optionally filtered by
+    current screening status, so a full cohort can be screened
+    efficiently via one-click screen_submission calls per row.
+
+    Doc 04's listSubmissions operation on this path also accepts a
+    `trackId` filter, shared with the general submissions-browsing use
+    case. Not implemented here: apps.submissions has no SubmissionTrack
+    model yet (FR-TRACK assignment -- assignSubmissionTrack /
+    removeSubmissionTrack -- is unimplemented), so there is nothing to
+    filter against. Flagging as a known gap rather than faking the filter.
+    """
+    from apps.submissions.models import Submission
+
+    hackathon = _get_hackathon_or_404(hackathon_id)
+
+    if not _is_organizer_of_org(actor=actor, org_id=hackathon.host_org_id):
+        raise PermissionDenied("Only an Organizer of the host organization can view submissions for screening.")
+
+    if eligibility_status and eligibility_status not in ELIGIBILITY_STATUS_CHOICES:
+        raise ValidationError({"eligibilityStatus": f"Must be one of {', '.join(ELIGIBILITY_STATUS_CHOICES)}."})
+
+    limit = max(1, min(int(limit), 100))
+    offset = max(0, int(offset))
+
+    queryset = Submission.objects.filter(hackathon=hackathon)
+
+    # FR-ELIG-002 scope: "listing all locked submissions" -- before the
+    # submission deadline nothing in this hackathon is locked yet, so the
+    # screening queue is legitimately empty rather than an error (same
+    # "empty result over exception" call as list_hackathons' status
+    # filter), letting an Organizer open this view early without a 404/400.
+    if timezone.now() < hackathon.submission_closes_at:
+        queryset = queryset.none()
+
+    if eligibility_status:
+        queryset = queryset.filter(eligibility_status=eligibility_status)
+
+    queryset = queryset.order_by("-submitted_at")
+    total = queryset.count()
+    results = list(queryset[offset:offset + limit])
+    return results, total
