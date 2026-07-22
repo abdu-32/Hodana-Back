@@ -4,8 +4,9 @@ import factory
 from factory.django import DjangoModelFactory
 
 from apps.teams.tests.factories import TeamFactory
+from apps.hackathons.tests.factories import ChallengeTrackFactory
 
-from ..models import Submission, SubmissionVersion
+from ..models import Submission, SubmissionVersion, SubmissionTrack
 
 
 class SubmissionFactory(DjangoModelFactory):
@@ -32,3 +33,16 @@ class SubmissionVersionFactory(DjangoModelFactory):
     submission = factory.SubFactory(SubmissionFactory)
     title = factory.LazyAttribute(lambda o: o.submission.title)
     description = "An earlier draft description."
+
+
+class SubmissionTrackFactory(DjangoModelFactory):
+    class Meta:
+        model = SubmissionTrack
+
+    @factory.lazy_attribute
+    def submission(self):
+        return SubmissionFactory(
+            team__hackathon=self.track.hackathon,
+        )
+
+    track = factory.SubFactory(ChallengeTrackFactory)

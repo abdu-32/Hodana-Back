@@ -119,3 +119,54 @@ class SubmissionEligibilityView(APIView):
             actor=request.user, submission_id=submission_id, **serializer.validated_data,
         )
         return Response(serializers.SubmissionSerializer(submission).data)
+
+
+class SubmissionTrackView(APIView):
+    """
+    POST:
+        Opt a submission into a challenge track.
+
+    DELETE:
+        Remove a submission from a challenge track.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=serializers.SubmissionTrackOptInSerializer,
+        responses={201: serializers.SubmissionTrackSerializer},
+    )
+    def post(self, request, submission_id):
+        serializer = serializers.SubmissionTrackOptInSerializer(
+            data=request.data,
+        )
+        serializer.is_valid(raise_exception=True)
+
+        submission_track = services.opt_in_submission_to_track(
+            submission_id=submission_id,
+            track_id=serializer.validated_data["track_id"],
+            actor=request.user,
+        )
+
+        return Response(
+            serializers.SubmissionTrackSerializer(submission_track).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        request=serializers.SubmissionTrackOptInSerializer,
+        responses={204: None},
+    )
+    def delete(self, request, submission_id):
+        serializer = serializers.SubmissionTrackOptInSerializer(
+            data=request.data,
+        )
+        serializer.is_valid(raise_exception=True)
+
+        services.remove_submission_from_track(
+            submission_id=submission_id,
+            track_id=serializer.validated_data["track_id"],
+            actor=request.user,
+        )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)

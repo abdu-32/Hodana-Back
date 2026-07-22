@@ -15,10 +15,10 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 
 from apps.accounts.models import RoleAssignment
 from apps.core.models import AuditLogEntry
-from apps.hackathons.models import Hackathon
+from apps.hackathons.models import Hackathon, ChallengeTrack
 from apps.teams.models import TeamMember
 
-from .models import Submission, SubmissionVersion
+from .models import Submission, SubmissionVersion, SubmissionTrack
 
 # FR-SUB-002: "up to 5 media files (images or a single demo video link)".
 MAX_ATTACHMENTS = 5
@@ -98,6 +98,7 @@ def _require_not_locked(hackathon):
         raise ValidationError("Submissions are locked after the submission deadline.")
 
 
+
 def _record_version(*, submission, actor):
     """Snapshots the pre-change title/description, then trims to the 10
     most recently retained versions (FR-SUB-004)."""
@@ -112,6 +113,17 @@ def _record_version(*, submission, actor):
     if stale_ids:
         SubmissionVersion.objects.filter(id__in=stale_ids).delete()
 
+
+def _require_submission_track_editable(submission):
+    """
+    BR-003:
+    Submission track opt-ins are locked after the submission deadline.
+    """
+
+    if timezone.now() > submission.hackathon.submission_closes_at:
+        raise ValidationError(
+            "Submission track opt-ins are locked after the submission deadline."
+        )
 
 # ---- FR-SUB-001: create and edit a submission -------------------------------
 
@@ -232,3 +244,72 @@ def get_submission_history(*, actor, submission_id):
     _require_team_member_or_organizer(submission=submission, actor=actor)
     versions = list(submission.versions.order_by("-created_at"))
     return submission, versions
+
+
+@transaction.atomic
+def opt_in_submission_to_track(*, submission_id, track_id, actor):
+    submission = (
+        Submission.objects
+        .select_for_update()
+        .select_related("team__hackathon")
+        .get(id=submission_id)
+    )
+
+    _require_submission_track_editable(submission)
+
+    # Use your existing team membership authorization helper here.
+    _require_team_member(
+        submission=submission,
+        actor=actor,
+    )
+
+    track = ChallengeTrack.objects.get(id=track_id)
+
+    if track.hackathon_id != submission.team.hackathon_id:
+        raise ValidationError(
+            "The challenge track must belong to the submission's hackathon."
+        )
+
+    submission_track, created = SubmissionTrack.objects.get_or_create(
+        submission=submission,
+        track=track,
+    )
+
+    if created:
+        AuditLogEntry.objects.create(
+            actor_id=actor.id, action="submission_track.opt_in", target_type="submission_track", target_id=str(submission_track.id),
+        )
+
+    return submission_track
+
+@transaction.atomic
+def remove_submission_from_track(*, submission_id, track_id, actor):
+    submission = (
+        Submission.objects
+        .select_for_update()
+        .select_related("team__hackathon")
+        .get(id=submission_id)
+    )
+
+    _require_submission_track_editable(submission)
+
+    _require_team_member(
+        submission=submission,
+        actor=actor,
+    )
+
+    try:
+        submission_track = SubmissionTrack.objects.get(
+            submission_id=submission_id,
+            track_id=track_id,
+        )
+    except SubmissionTrack.DoesNotExist:
+        raise NotFound(
+            "Submission is not opted into this track."
+        )
+
+    AuditLogEntry.objects.create(
+        actor_id=actor.id, action="submission_track.opt_out", target_type="submission_track", target_id=str(submission_track.id),
+    )
+
+    submission_track.delete()

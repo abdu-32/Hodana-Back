@@ -14,10 +14,13 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 
 from apps.accounts.tests.factories import AccountFactory, RoleAssignmentFactory
 from apps.core.models import AuditLogEntry
-from apps.hackathons.tests.factories import PublishedHackathonFactory
+from apps.hackathons.tests.factories import (
+    ChallengeTrackFactory,
+    PublishedHackathonFactory,
+)
 from apps.registrations.tests.factories import RegistrationFactory
 from apps.submissions import services
-from apps.submissions.models import Submission, SubmissionVersion
+from apps.submissions.models import Submission, SubmissionVersion, SubmissionTrack
 from apps.teams.tests.factories import AcceptedTeamMemberFactory, TeamFactory
 
 from .factories import SubmissionFactory, SubmissionVersionFactory
@@ -249,3 +252,167 @@ class TestGetSubmissionHistory:
         stranger = AccountFactory()
         with pytest.raises(PermissionDenied):
             services.get_submission_history(actor=stranger, submission_id=submission.id)
+
+
+# ---------------------------------------------------------------------------
+# FR-JUDGE-004 / Submission track opt-ins
+# ---------------------------------------------------------------------------
+
+
+class TestSubmissionTrackOptIn:
+    def test_team_member_can_opt_submission_into_track(self, owner, team):
+        submission = SubmissionFactory(
+            team=team,
+            hackathon=team.hackathon,
+        )
+        track = ChallengeTrackFactory(
+            hackathon=team.hackathon,
+        )
+
+        result = services.opt_in_submission_to_track(
+            actor=owner,
+            submission_id=submission.id,
+            track_id=track.id,
+        )
+
+        assert result.submission_id == submission.id
+        assert result.track_id == track.id
+
+    def test_duplicate_track_opt_in_is_idempotent(self, owner, team):
+        submission = SubmissionFactory(
+            team=team,
+            hackathon=team.hackathon,
+        )
+        track = ChallengeTrackFactory(
+            hackathon=team.hackathon,
+        )
+
+        first = services.opt_in_submission_to_track(
+            actor=owner,
+            submission_id=submission.id,
+            track_id=track.id,
+        )
+
+        second = services.opt_in_submission_to_track(
+            actor=owner,
+            submission_id=submission.id,
+            track_id=track.id,
+        )
+
+        assert first.pk == second.pk
+        assert SubmissionTrack.objects.filter(
+            submission=submission,
+            track=track,
+        ).count() == 1
+
+    def test_submission_cannot_opt_into_track_from_another_hackathon(
+        self,
+        owner,
+        team,
+    ):
+        submission = SubmissionFactory(
+            team=team,
+            hackathon=team.hackathon,
+        )
+        other_track = ChallengeTrackFactory()
+
+        with pytest.raises(ValidationError):
+            services.opt_in_submission_to_track(
+                actor=owner,
+                submission_id=submission.id,
+                track_id=other_track.id,
+            )
+
+    def test_non_team_member_cannot_opt_submission_into_track(self, team):
+        submission = SubmissionFactory(
+            team=team,
+            hackathon=team.hackathon,
+        )
+        track = ChallengeTrackFactory(
+            hackathon=team.hackathon,
+        )
+        stranger = AccountFactory()
+
+        with pytest.raises(PermissionDenied):
+            services.opt_in_submission_to_track(
+                actor=stranger,
+                submission_id=submission.id,
+                track_id=track.id,
+            )
+
+    def test_track_opt_in_is_locked_after_submission_deadline(
+        self,
+        owner,
+        team,
+    ):
+        submission = SubmissionFactory(
+            team=team,
+            hackathon=team.hackathon,
+        )
+        track = ChallengeTrackFactory(
+            hackathon=team.hackathon,
+        )
+
+        team.hackathon.submission_closes_at = (
+            timezone.now() - timedelta(seconds=1)
+        )
+        team.hackathon.save(
+            update_fields=["submission_closes_at"],
+        )
+
+        with pytest.raises(ValidationError):
+            services.opt_in_submission_to_track(
+                actor=owner,
+                submission_id=submission.id,
+                track_id=track.id,
+            )
+
+    def test_team_member_can_remove_submission_track_opt_in(
+        self,
+        owner,
+        team,
+    ):
+        submission = SubmissionFactory(
+            team=team,
+            hackathon=team.hackathon,
+        )
+        track = ChallengeTrackFactory(
+            hackathon=team.hackathon,
+        )
+
+        services.opt_in_submission_to_track(
+            actor=owner,
+            submission_id=submission.id,
+            track_id=track.id,
+        )
+
+        services.remove_submission_from_track(
+            actor=owner,
+            submission_id=submission.id,
+            track_id=track.id,
+        )
+
+        assert not SubmissionTrack.objects.filter(
+            submission=submission,
+            track=track,
+        ).exists()
+
+    def test_removing_nonexistent_track_opt_in_fails(
+        self,
+        owner,
+        team,
+    ):
+        submission = SubmissionFactory(
+            team=team,
+            hackathon=team.hackathon,
+        )
+        track = ChallengeTrackFactory(
+            hackathon=team.hackathon,
+        )
+
+        with pytest.raises(NotFound):
+            services.remove_submission_from_track(
+                actor=owner,
+                submission_id=submission.id,
+                track_id=track.id,
+            )

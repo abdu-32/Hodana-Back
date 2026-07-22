@@ -5,7 +5,7 @@ Delegates to services.py for anything stateful.
 
 from rest_framework import serializers
 
-from .models import Submission, SubmissionVersion
+from .models import Submission, SubmissionTrack, SubmissionVersion
 
 
 class UpsertSubmissionSerializer(serializers.Serializer):
@@ -100,3 +100,21 @@ class EligibilityUpdateSerializer(serializers.Serializer):
         source="eligibility_status", choices=["eligible", "disqualified"],
     )
     reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class SubmissionTrackSerializer(serializers.ModelSerializer):
+    track_id = serializers.UUIDField(
+        source="track.id",
+        read_only=True,
+    )
+
+    class Meta:
+        model = SubmissionTrack
+        fields = [
+            "track_id",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+class SubmissionTrackOptInSerializer(serializers.Serializer):
+    track_id = serializers.UUIDField()

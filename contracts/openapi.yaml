@@ -410,6 +410,532 @@ paths:
               schema:
                 $ref: '#/components/schemas/ChallengeTrack'
           description: ''
+  /api/v1/judging/assignments/{assignment_id}:
+    delete:
+      operationId: v1_judging_assignments_destroy
+      description: |-
+        DELETE /judging/assignments/{assignment_id} -- FR-JUDGE-001. Organizer
+        only, and only before the round opens. If the judge already scored the
+        submission, the caller must resend with confirmScoreDiscard to also
+        delete those scores (services.remove_assignment).
+      parameters:
+      - in: path
+        name: assignment_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/judging/assignments/{assignment_id}/reassign:
+    post:
+      operationId: v1_judging_assignments_reassign_create
+      description: |-
+        POST /judging/assignments/{assignment_id}/reassign -- FR-JUDGE-001.
+        Swaps the assigned judge for one who has already accepted an invitation
+        to the round; Organizer only, and only before the round opens. Requires
+        confirmScoreDiscard if the outgoing judge already scored the submission
+        (services.reassign_judge).
+      parameters:
+      - in: path
+        name: assignment_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignmentReassign'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AssignmentReassign'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AssignmentReassign'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: ''
+  /api/v1/judging/judge/invitations:
+    post:
+      operationId: v1_judging_judge_invitations_create
+      description: |-
+        POST /judging/judge/invitations -- FR-JUDGE-001. Invites an email
+        address to judge a round; restricted to that round's manager, and only
+        while the round is not_started (services.invite_judge).
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JudgeInvitationCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/JudgeInvitationCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/JudgeInvitationCreate'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JudgeInvitation'
+          description: ''
+  /api/v1/judging/judge/invitations/{invitation_id}/accept:
+    post:
+      operationId: v1_judging_judge_invitations_accept_create
+      description: |-
+        POST /judging/judge/invitations/{invitation_id}/accept -- FR-JUDGE-001.
+        Accepted only by the invited email's own account; grants that account
+        a judge RoleAssignment on the hackathon (services.accept_invitation).
+      parameters:
+      - in: path
+        name: invitation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JudgeInvitation'
+          description: ''
+  /api/v1/judging/rounds:
+    get:
+      operationId: v1_judging_rounds_list
+      description: |-
+        GET /judging/rounds -- FR-JUDGE-004. Lists the judging rounds for a
+        hackathon (optionally scoped to a track), visible to the hackathon's
+        Organizer and, for track-scoped rounds, that track's Sponsor
+        (services.list_rounds). POST creates a round: track=None creates the
+        Overall round (Organizer only); a trackId creates that track's round
+        (Organizer or the track's Sponsor).
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JudgingRound'
+          description: ''
+    post:
+      operationId: v1_judging_rounds_create
+      description: |-
+        GET /judging/rounds -- FR-JUDGE-004. Lists the judging rounds for a
+        hackathon (optionally scoped to a track), visible to the hackathon's
+        Organizer and, for track-scoped rounds, that track's Sponsor
+        (services.list_rounds). POST creates a round: track=None creates the
+        Overall round (Organizer only); a trackId creates that track's round
+        (Organizer or the track's Sponsor).
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JudgingRoundCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/JudgingRoundCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/JudgingRoundCreate'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JudgingRound'
+          description: ''
+  /api/v1/judging/rounds/{round_id}/assignments:
+    get:
+      operationId: v1_judging_rounds_assignments_list
+      description: |-
+        GET/POST /judging/rounds/{round_id}/assignments -- FR-JUDGE-001. GET
+        is available to the round's manager for any judge, and to a judge for
+        their own assignments only (pass judgeUserId equal to your own id --
+        services.list_assignments). POST manually assigns one submission to one
+        judge; Organizer only, and only before the round opens.
+      parameters:
+      - in: path
+        name: round_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Assignment'
+          description: ''
+    post:
+      operationId: v1_judging_rounds_assignments_create
+      description: |-
+        GET/POST /judging/rounds/{round_id}/assignments -- FR-JUDGE-001. GET
+        is available to the round's manager for any judge, and to a judge for
+        their own assignments only (pass judgeUserId equal to your own id --
+        services.list_assignments). POST manually assigns one submission to one
+        judge; Organizer only, and only before the round opens.
+      parameters:
+      - in: path
+        name: round_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignmentCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AssignmentCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AssignmentCreate'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: ''
+  /api/v1/judging/rounds/{round_id}/assignments/auto:
+    post:
+      operationId: v1_judging_rounds_assignments_auto_create
+      description: |-
+        POST /judging/rounds/{round_id}/assignments/auto -- FR-JUDGE-001.
+        Round-robin assigns every eligible submission in the round's scope
+        across the given judges (each of whom must already have accepted an
+        invitation to the round); Organizer only, and only before the round
+        opens (services.auto_distribute).
+      parameters:
+      - in: path
+        name: round_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutoDistribution'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AutoDistribution'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AutoDistribution'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Assignment'
+          description: ''
+  /api/v1/judging/rounds/{round_id}/close:
+    post:
+      operationId: v1_judging_rounds_close_create
+      description: |-
+        POST /judging/rounds/{round_id}/close -- FR-JUDGE-004. Moves an open
+        round to closed and materializes its RoundResult rows; restricted to
+        that round's manager (services.close_round -> services.calculate_round_results).
+      parameters:
+      - in: path
+        name: round_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JudgingRound'
+          description: ''
+  /api/v1/judging/rounds/{round_id}/criteria:
+    get:
+      operationId: v1_judging_rounds_criteria_list
+      description: |-
+        GET/POST /judging/rounds/{round_id}/criteria -- FR-HACK-004 / BR-005.
+        Rubric management for a round; restricted to that round's manager
+        (Organizer, or the track's Sponsor for a track-scoped round). Criteria
+        cannot be added once the round has opened (services.create_criterion).
+      parameters:
+      - in: path
+        name: round_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JudgingCriterion'
+          description: ''
+    post:
+      operationId: v1_judging_rounds_criteria_create
+      description: |-
+        GET/POST /judging/rounds/{round_id}/criteria -- FR-HACK-004 / BR-005.
+        Rubric management for a round; restricted to that round's manager
+        (Organizer, or the track's Sponsor for a track-scoped round). Criteria
+        cannot be added once the round has opened (services.create_criterion).
+      parameters:
+      - in: path
+        name: round_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JudgingCriterionCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/JudgingCriterionCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/JudgingCriterionCreate'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JudgingCriterion'
+          description: ''
+  /api/v1/judging/rounds/{round_id}/open:
+    post:
+      operationId: v1_judging_rounds_open_create
+      description: |-
+        POST /judging/rounds/{round_id}/open -- FR-JUDGE-004. Moves a
+        not_started round to open, after validating the rubric's criterion
+        weights sum to 100; restricted to that round's manager
+        (services.open_round).
+      parameters:
+      - in: path
+        name: round_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JudgingRound'
+          description: ''
+  /api/v1/judging/rounds/{round_id}/results:
+    get:
+      operationId: v1_judging_rounds_results_list
+      description: |-
+        GET /judging/rounds/{round_id}/results -- FR-JUDGE-003. The
+        materialized, rank-ordered aggregate scores for a closed round;
+        restricted to that round's manager.
+      parameters:
+      - in: path
+        name: round_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoundResult'
+          description: ''
+  /api/v1/judging/scores/{score_id}/reopen:
+    post:
+      operationId: v1_judging_scores_reopen_create
+      description: |-
+        POST /judging/scores/{score_id}/reopen -- FR-JUDGE-002. Reverts a
+        final score back to draft so the judge can revise it, recording an
+        audit log entry; Organizer only, and requires a reason of at least 10
+        characters (services.reopen_score).
+      parameters:
+      - in: path
+        name: score_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScoreReopen'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ScoreReopen'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ScoreReopen'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Score'
+          description: ''
+  /api/v1/judging/submissions/{submission_id}/score:
+    post:
+      operationId: v1_judging_submissions_score_create
+      description: |-
+        POST /judging/submissions/{submission_id}/score -- FR-JUDGE-002.
+        Saves or updates the caller's own score for one criterion on a
+        submission they are assigned to judge. Scores can be saved as draft or
+        final while the round is open; a final score becomes immutable to the
+        judge once saved (services.submit_score).
+      parameters:
+      - in: path
+        name: submission_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScoreCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ScoreCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ScoreCreate'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Score'
+          description: ''
+  /api/v1/judging/submissions/{submission_id}/scores:
+    get:
+      operationId: v1_judging_submissions_scores_list
+      description: |-
+        GET /judging/submissions/{submission_id}/scores -- FR-JUDGE-002.
+        Every judge's per-criterion scores for a submission; restricted to the
+        hackathon's Organizer (services.list_submission_scores).
+      parameters:
+      - in: path
+        name: submission_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Score'
+          description: ''
   /api/v1/organizations/:
     post:
       operationId: v1_organizations_create
@@ -776,6 +1302,67 @@ paths:
               schema:
                 $ref: '#/components/schemas/Submission'
           description: ''
+  /api/v1/submissions/{submission_id}/tracks:
+    post:
+      operationId: v1_submissions_tracks_create
+      description: |-
+        POST:
+            Opt a submission into a challenge track.
+
+        DELETE:
+            Remove a submission from a challenge track.
+      parameters:
+      - in: path
+        name: submission_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionTrackOptIn'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SubmissionTrackOptIn'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SubmissionTrackOptIn'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionTrack'
+          description: ''
+    delete:
+      operationId: v1_submissions_tracks_destroy
+      description: |-
+        POST:
+            Opt a submission into a challenge track.
+
+        DELETE:
+            Remove a submission from a challenge track.
+      parameters:
+      - in: path
+        name: submission_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/submissions/hackathons/{hackathon_id}:
     post:
       operationId: v1_submissions_hackathons_create
@@ -1144,6 +1731,64 @@ paths:
           description: ''
 components:
   schemas:
+    Assignment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        roundId:
+          type: string
+          format: uuid
+          readOnly: true
+        submissionId:
+          type: string
+          format: uuid
+          readOnly: true
+        judgeUserId:
+          type: string
+          format: uuid
+          readOnly: true
+        assignedAt:
+          type: string
+          format: date-time
+          readOnly: true
+        reassignedFromUserId:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+      required:
+      - assignedAt
+      - id
+      - judgeUserId
+      - reassignedFromUserId
+      - roundId
+      - submissionId
+    AssignmentCreate:
+      type: object
+      properties:
+        submissionId:
+          type: string
+          format: uuid
+        judgeUserId:
+          type: string
+          format: uuid
+      required:
+      - judgeUserId
+      - submissionId
+    AssignmentReassign:
+      type: object
+      properties:
+        confirmScoreDiscard:
+          type: boolean
+          default: false
+        newJudgeUserId:
+          type: string
+          format: uuid
+      required:
+      - newJudgeUserId
     AttachMedia:
       type: object
       description: |-
@@ -1176,6 +1821,16 @@ components:
       - accessToken
       - refreshToken
       - user
+    AutoDistribution:
+      type: object
+      properties:
+        judgeUserIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+      - judgeUserIds
     Badge:
       type: object
       properties:
@@ -1529,6 +2184,166 @@ components:
           format: email
       required:
       - inviteeEmail
+    JudgeInvitation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        roundId:
+          type: string
+          format: uuid
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/JudgeInvitationStatusEnum'
+        invitedAt:
+          type: string
+          format: date-time
+          readOnly: true
+        respondedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - email
+      - id
+      - invitedAt
+      - respondedAt
+      - roundId
+    JudgeInvitationCreate:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        roundId:
+          type: string
+          format: uuid
+      required:
+      - email
+      - roundId
+    JudgeInvitationStatusEnum:
+      enum:
+      - sent
+      - accepted
+      - expired
+      type: string
+      description: |-
+        * `sent` - Sent
+        * `accepted` - Accepted
+        * `expired` - Expired
+    JudgingCriterion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        roundId:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+        minScore:
+          type: integer
+          readOnly: true
+        maxScore:
+          type: integer
+          readOnly: true
+        weight:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+      required:
+      - id
+      - maxScore
+      - minScore
+      - name
+      - roundId
+      - weight
+    JudgingCriterionCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        minScore:
+          type: integer
+          default: 0
+        maxScore:
+          type: integer
+        weight:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+      required:
+      - maxScore
+      - name
+      - weight
+    JudgingRound:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        hackathonId:
+          type: string
+          format: uuid
+          readOnly: true
+        trackId:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        status:
+          $ref: '#/components/schemas/JudgingRoundStatusEnum'
+        openedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        closedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - closedAt
+      - hackathonId
+      - id
+      - openedAt
+      - trackId
+    JudgingRoundCreate:
+      type: object
+      properties:
+        hackathonId:
+          type: string
+          format: uuid
+        trackId:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - hackathonId
+    JudgingRoundStatusEnum:
+      enum:
+      - not_started
+      - open
+      - closed
+      type: string
+      description: |-
+        * `not_started` - Not Started
+        * `open` - Open
+        * `closed` - Closed
     LocationModeEnum:
       enum:
       - online
@@ -1934,6 +2749,126 @@ components:
       description: |-
         * `approved` - approved
         * `rejected` - rejected
+    RoundResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        roundId:
+          type: string
+          format: uuid
+          readOnly: true
+        submissionId:
+          type: string
+          format: uuid
+          readOnly: true
+        aggregateScore:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+          readOnly: true
+        rank:
+          type: integer
+          maximum: 32767
+          minimum: 0
+          nullable: true
+        calculatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - aggregateScore
+      - calculatedAt
+      - id
+      - roundId
+      - submissionId
+    Score:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        submissionId:
+          type: string
+          format: uuid
+          readOnly: true
+        judgeUserId:
+          type: string
+          format: uuid
+          readOnly: true
+        criterionId:
+          type: string
+          format: uuid
+          readOnly: true
+        scoreValue:
+          type: integer
+          readOnly: true
+        comment:
+          type: string
+        status:
+          $ref: '#/components/schemas/ScoreStatusEnum'
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - createdAt
+      - criterionId
+      - id
+      - judgeUserId
+      - scoreValue
+      - submissionId
+      - updatedAt
+    ScoreCreate:
+      type: object
+      properties:
+        criterionId:
+          type: string
+          format: uuid
+        scoreValue:
+          type: integer
+        comment:
+          type: string
+          default: ''
+        status:
+          allOf:
+          - $ref: '#/components/schemas/ScoreCreateStatusEnum'
+          default: final
+      required:
+      - criterionId
+      - scoreValue
+    ScoreCreateStatusEnum:
+      enum:
+      - draft
+      - final
+      type: string
+      description: |-
+        * `draft` - draft
+        * `final` - final
+    ScoreReopen:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 1000
+          minLength: 1
+      required:
+      - reason
+    ScoreStatusEnum:
+      enum:
+      - draft
+      - final
+      type: string
+      description: |-
+        * `draft` - Draft
+        * `final` - Final
     ScreeningSubmission:
       type: object
       description: |-
@@ -2096,6 +3031,28 @@ components:
       required:
       - submission
       - versions
+    SubmissionTrack:
+      type: object
+      properties:
+        track_id:
+          type: string
+          format: uuid
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - track_id
+    SubmissionTrackOptIn:
+      type: object
+      properties:
+        track_id:
+          type: string
+          format: uuid
+      required:
+      - track_id
     SubmissionVersion:
       type: object
       properties:

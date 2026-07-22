@@ -107,6 +107,43 @@ class Submission(models.Model):
         return f"{self.title or '(untitled)'} ({self.team_id})"
 
 
+class SubmissionTrack(models.Model):
+    """
+    A submission's opt-in to a challenge track.
+
+    A submission may opt into multiple tracks belonging to the same hackathon.
+    The relationship becomes immutable once the submission deadline passes.
+    """
+
+    submission = models.ForeignKey(
+        Submission,
+        on_delete=models.CASCADE,
+        related_name="track_opt_ins",
+    )
+
+    track = models.ForeignKey(
+        "hackathons.ChallengeTrack",
+        on_delete=models.CASCADE,
+        related_name="submission_opt_ins",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "submission_tracks"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["submission", "track"],
+                name="unique_submission_track",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["track", "submission"],
+                name="subtrack_track_sub_idx",
+            ),
+        ]
+
 class SubmissionVersion(models.Model):
     """Implements FR-SUB-004. Not in DB Design Sec 4.6 -- see module
     docstring. A snapshot is written each time a save changes the

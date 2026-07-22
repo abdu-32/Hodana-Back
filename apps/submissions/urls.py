@@ -18,4 +18,5 @@ urlpatterns = [
     path("<uuid:submission_id>/finalize", views.SubmissionFinalizeView.as_view(), name="finalize"),
     path("<uuid:submission_id>/history", views.SubmissionHistoryView.as_view(), name="history"),
     path("<uuid:submission_id>/eligibility", views.SubmissionEligibilityView.as_view(), name="eligibility"),
+    path("<uuid:submission_id>/tracks", views.SubmissionTrackView.as_view(), name="submission-tracks"),
 ]
