@@ -1156,6 +1156,158 @@ paths:
                 items:
                   $ref: '#/components/schemas/Registration'
           description: ''
+  /api/v1/showcase/gallery:
+    get:
+      operationId: v1_showcase_gallery_retrieve
+      description: |-
+        GET /showcase/gallery -- FR-SHOWCASE-002 (public). A cross-hackathon,
+        searchable gallery of every showcased project, filterable by
+        hackathon, host institution, and technology tag
+        (services.list_gallery).
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedGallery'
+          description: ''
+  /api/v1/showcase/hackathons/{hackathon_id}:
+    get:
+      operationId: v1_showcase_hackathons_retrieve
+      description: |-
+        GET /showcase/hackathons/{hackathon_id} -- FR-SHOWCASE-001 (public).
+        The rank-ordered Overall and Challenge Track results for a hackathon
+        whose showcase has been published; 404 while unpublished
+        (services.get_hackathon_showcase).
+      parameters:
+      - in: path
+        name: hackathon_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HackathonShowcase'
+          description: ''
+  /api/v1/showcase/hackathons/{hackathon_id}/publish:
+    post:
+      operationId: v1_showcase_hackathons_publish_create
+      description: |-
+        POST /showcase/hackathons/{hackathon_id}/publish -- FR-SHOWCASE-001.
+        Makes a completed hackathon's judging results public; Organizer only,
+        and only once every judging round has closed
+        (services.publish_showcase).
+      parameters:
+      - in: path
+        name: hackathon_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/showcase/hackathons/{hackathon_id}/unpublish:
+    post:
+      operationId: v1_showcase_hackathons_unpublish_create
+      description: |-
+        POST /showcase/hackathons/{hackathon_id}/unpublish -- FR-SHOWCASE-001
+        /FR-SHOWCASE-002. Revokes public visibility of a hackathon's showcase
+        page and immediately drops its projects from the cross-hackathon
+        gallery; Organizer only (services.unpublish_showcase).
+      parameters:
+      - in: path
+        name: hackathon_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/showcase/submissions/{submission_id}/visibility:
+    put:
+      operationId: v1_showcase_submissions_visibility_update
+      description: |-
+        PUT/DELETE /showcase/submissions/{submission_id}/visibility --
+        FR-SHOWCASE-001's per-submission override. PUT shows or hides one
+        submission with a logged reason, overriding the eligibility-derived
+        default; DELETE reverts to that default. Organizer only
+        (services.set_submission_visibility / clear_submission_visibility_override).
+      parameters:
+      - in: path
+        name: submission_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionVisibility'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SubmissionVisibility'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SubmissionVisibility'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShowcaseOverride'
+          description: ''
+    delete:
+      operationId: v1_showcase_submissions_visibility_destroy
+      description: |-
+        PUT/DELETE /showcase/submissions/{submission_id}/visibility --
+        FR-SHOWCASE-001's per-submission override. PUT shows or hides one
+        submission with a logged reason, overriding the eligibility-derived
+        default; DELETE reverts to that default. Organizer only
+        (services.set_submission_visibility / clear_submission_visibility_override).
+      parameters:
+      - in: path
+        name: submission_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/submissions/{submission_id}:
     get:
       operationId: v1_submissions_retrieve
@@ -2114,6 +2266,33 @@ components:
       - submissionClosesAt
       - submissionOpensAt
       - title
+    HackathonShowcase:
+      type: object
+      description: GET /showcase/hackathons/{id} response body.
+      properties:
+        hackathonId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        slug:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+        overallResults:
+          type: string
+          readOnly: true
+        trackResults:
+          type: string
+          readOnly: true
+      required:
+      - hackathonId
+      - overallResults
+      - publishedAt
+      - slug
+      - title
+      - trackResults
     HackathonStatusEnum:
       enum:
       - draft
@@ -2511,6 +2690,13 @@ components:
           $ref: '#/components/schemas/PaginationMeta'
       required:
       - data
+      - meta
+    PaginatedGallery:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+      required:
       - meta
     PaginatedHackathons:
       type: object
@@ -2916,6 +3102,42 @@ components:
       - submittedAt
       - teamId
       - title
+    ShowcaseOverride:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        submissionId:
+          type: string
+          format: uuid
+          readOnly: true
+        hackathonId:
+          type: string
+          format: uuid
+          readOnly: true
+        isVisible:
+          type: boolean
+          readOnly: true
+        reason:
+          type: string
+        createdByUserId:
+          type: string
+          format: uuid
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - createdAt
+      - createdByUserId
+      - hackathonId
+      - id
+      - isVisible
+      - reason
+      - submissionId
     Signup:
       type: object
       properties:
@@ -3078,6 +3300,18 @@ components:
       - createdAt
       - editedByUserId
       - id
+    SubmissionVisibility:
+      type: object
+      properties:
+        isVisible:
+          type: boolean
+        reason:
+          type: string
+          maxLength: 2000
+          minLength: 10
+      required:
+      - isVisible
+      - reason
     SubmitVerificationDocuments:
       type: object
       description: |-
