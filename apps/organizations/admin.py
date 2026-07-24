@@ -43,10 +43,11 @@ class OrganizationAdmin(admin.ModelAdmin):
         "type",
         "verification_status",
         "primary_email_domain",
+        "is_suspended",
         "created_by",
         "created_at",
     )
-    list_filter = ("type", "verification_status")
+    list_filter = ("type", "verification_status", "is_suspended")
     search_fields = ("id", "name", "contact_email", "primary_email_domain")
     ordering = ("-created_at",)
     date_hierarchy = "created_at"
@@ -60,6 +61,7 @@ class OrganizationAdmin(admin.ModelAdmin):
     readonly_fields = (
         "id",
         "verification_status",
+        "is_suspended",
         "verified_at",
         "created_at",
         "updated_at",
@@ -70,6 +72,7 @@ class OrganizationAdmin(admin.ModelAdmin):
         ("Verification", {"fields": ("verification_status", "verified_at")}),
         ("Ownership", {"fields": ("created_by",)}),
         ("Timestamps", {"fields": ("created_at", "updated_at")}),
+        ("Moderation", {"fields": ("is_suspended",)}),
     )
 
 

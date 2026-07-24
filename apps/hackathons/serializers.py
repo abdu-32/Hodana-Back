@@ -39,6 +39,7 @@ class HackathonSerializer(serializers.ModelSerializer):
     createdByUserId = serializers.UUIDField(source="created_by_id", read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    isSuspended = serializers.BooleanField(source="is_suspended", read_only=True)  # FR-ADMIN-001
 
     class Meta:
         model = Hackathon
@@ -46,7 +47,7 @@ class HackathonSerializer(serializers.ModelSerializer):
             "id", "title", "description", "hostOrgId", "slug", "bannerUrl",
             "registrationOpensAt", "registrationClosesAt", "submissionOpensAt", "submissionClosesAt",
             "rules", "prizeInfo", "locationMode", "eligibilityRules", "tags", "status",
-            "showcasePublishedAt", "createdByUserId", "createdAt", "updatedAt",
+            "showcasePublishedAt", "createdByUserId", "createdAt", "updatedAt", "isSuspended", 
         ]
 
 

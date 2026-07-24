@@ -4,6 +4,259 @@ info:
   version: 1.0.0
   description: Hackathon and innovation-challenge platform API.
 paths:
+  /api/v1/admin/hackathons/{id}/reactivate:
+    post:
+      operationId: v1_admin_hackathons_reactivate_create
+      description: |-
+        POST /admin/hackathons/{id}/reactivate. Not called for by an
+        explicit FR-ADMIN-001 acceptance criterion -- see
+        services.reactivate_hackathon's docstring for why it exists anyway.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminHackathon'
+          description: ''
+  /api/v1/admin/hackathons/{id}/suspend:
+    post:
+      operationId: v1_admin_hackathons_suspend_create
+      description: POST /admin/hackathons/{id}/suspend -- FR-ADMIN-001.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminHackathon'
+          description: ''
+  /api/v1/admin/organizations/{id}/reactivate:
+    post:
+      operationId: v1_admin_organizations_reactivate_create
+      description: POST /admin/organizations/{id}/reactivate.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrganization'
+          description: ''
+  /api/v1/admin/organizations/{id}/suspend:
+    post:
+      operationId: v1_admin_organizations_suspend_create
+      description: POST /admin/organizations/{id}/suspend -- FR-ADMIN-001.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrganization'
+          description: ''
+  /api/v1/admin/organizations/pending:
+    get:
+      operationId: v1_admin_organizations_pending_list
+      description: |-
+        GET /admin/organizations/pending -- FR-ADMIN-001's "dashboard to
+        review pending organization verifications". The decision action
+        itself is organizations.OrganizationVerificationReviewView (POST
+        /organizations/{id}/verification-review) -- see that view's and
+        services.list_pending_organizations's docstrings for why it lives
+        there and not here.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminOrganization'
+          description: ''
+  /api/v1/admin/search:
+    get:
+      operationId: v1_admin_search_retrieve
+      description: GET /admin/search?q=... -- FR-ADMIN-002.
+      parameters:
+      - in: query
+        name: q
+        schema:
+          type: string
+        description: Matched against user name/email, organization name, and hackathon
+          title.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSearchResult'
+          description: ''
+  /api/v1/admin/users/{id}/reactivate:
+    post:
+      operationId: v1_admin_users_reactivate_create
+      description: POST /admin/users/{id}/reactivate.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccount'
+          description: ''
+  /api/v1/admin/users/{id}/suspend:
+    post:
+      operationId: v1_admin_users_suspend_create
+      description: POST /admin/users/{id}/suspend -- FR-ADMIN-001.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ModerationAction'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccount'
+          description: ''
   /api/v1/analytics/hackathons/{hackathon_id}/dashboard:
     get:
       operationId: v1_analytics_hackathons_dashboard_retrieve
@@ -2015,6 +2268,105 @@ paths:
           description: ''
 components:
   schemas:
+    AdminAccount:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        fullName:
+          type: string
+          readOnly: true
+        isSuspended:
+          type: boolean
+          readOnly: true
+        isPlatformAdmin:
+          type: boolean
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - createdAt
+      - email
+      - fullName
+      - id
+      - isPlatformAdmin
+      - isSuspended
+    AdminHackathon:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        title:
+          type: string
+          maxLength: 255
+        slug:
+          type: string
+          maxLength: 255
+          pattern: ^[-a-zA-Z0-9_]+$
+        hostOrgId:
+          type: string
+          format: uuid
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/StatusDaeEnum'
+        isSuspended:
+          type: boolean
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - createdAt
+      - hostOrgId
+      - id
+      - isSuspended
+      - slug
+      - title
+    AdminOrganization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 255
+        type:
+          $ref: '#/components/schemas/TypeF58Enum'
+        contactEmail:
+          type: string
+          format: email
+          readOnly: true
+        verificationStatus:
+          type: string
+          readOnly: true
+        isSuspended:
+          type: boolean
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - contactEmail
+      - createdAt
+      - id
+      - isSuspended
+      - name
+      - type
+      - verificationStatus
     Assignment:
       type: object
       properties:
@@ -2354,7 +2706,7 @@ components:
           items:
             type: string
         status:
-          $ref: '#/components/schemas/HackathonStatusEnum'
+          $ref: '#/components/schemas/StatusDaeEnum'
         showcasePublishedAt:
           type: string
           format: date-time
@@ -2372,6 +2724,9 @@ components:
           type: string
           format: date-time
           readOnly: true
+        isSuspended:
+          type: boolean
+          readOnly: true
       required:
       - bannerUrl
       - createdAt
@@ -2379,6 +2734,7 @@ components:
       - eligibilityRules
       - hostOrgId
       - id
+      - isSuspended
       - locationMode
       - prizeInfo
       - registrationClosesAt
@@ -2480,16 +2836,6 @@ components:
       - slug
       - title
       - trackResults
-    HackathonStatusEnum:
-      enum:
-      - draft
-      - published
-      - archived
-      type: string
-      description: |-
-        * `draft` - Draft
-        * `published` - Published
-        * `archived` - Archived
     HackathonUpdate:
       type: object
       description: |-
@@ -2732,6 +3078,20 @@ components:
       required:
       - email
       - password
+    ModerationAction:
+      type: object
+      description: |-
+        Request body shared by every suspend/reactivate endpoint in this
+        module -- FR-ADMIN-001 requires a reason on every moderation action,
+        not only on rejection (contrast with
+        organizations.ReviewOrganizationVerificationSerializer, where the
+        reason is conditional on the decision).
+      properties:
+        reason:
+          type: string
+          maxLength: 2000
+      required:
+      - reason
     Notification:
       type: object
       description: |-
@@ -2924,7 +3284,7 @@ components:
           type: string
           maxLength: 255
         type:
-          $ref: '#/components/schemas/OrganizationTypeEnum'
+          $ref: '#/components/schemas/TypeF58Enum'
         contactEmail:
           type: string
           format: email
@@ -2953,18 +3313,6 @@ components:
       - type
       - verificationStatus
       - verifiedAt
-    OrganizationTypeEnum:
-      enum:
-      - university
-      - company
-      - ngo
-      - government
-      type: string
-      description: |-
-        * `university` - University
-        * `company` - Company
-        * `ngo` - NGO
-        * `government` - Government
     PaginatedChallengeTracks:
       type: object
       properties:
@@ -3056,6 +3404,29 @@ components:
           type: string
       required:
       - message
+    PlatformSearchResult:
+      type: object
+      description: Response body for GET /admin/search -- FR-ADMIN-002.
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAccount'
+          readOnly: true
+        organizations:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminOrganization'
+          readOnly: true
+        hackathons:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminHackathon'
+          readOnly: true
+      required:
+      - hackathons
+      - organizations
+      - users
     PublicProfile:
       type: object
       description: |-
@@ -3485,6 +3856,16 @@ components:
       required:
       - email
       - password
+    StatusDaeEnum:
+      enum:
+      - draft
+      - published
+      - archived
+      type: string
+      description: |-
+        * `draft` - Draft
+        * `published` - Published
+        * `archived` - Archived
     Submission:
       type: object
       properties:
@@ -3755,6 +4136,18 @@ components:
       required:
       - members
       - team
+    TypeF58Enum:
+      enum:
+      - university
+      - company
+      - ngo
+      - government
+      type: string
+      description: |-
+        * `university` - University
+        * `company` - Company
+        * `ngo` - NGO
+        * `government` - Government
     UpsertSubmission:
       type: object
       description: |-

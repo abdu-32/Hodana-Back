@@ -85,6 +85,7 @@ class Hackathon(TimeStampedModel):
 
     status = models.CharField(max_length=20, choices=HACKATHON_STATUS_CHOICES, default="draft")
     showcase_published_at = models.DateTimeField(null=True, blank=True)  # gates FR-SHOWCASE-001 visibility
+    is_suspended = models.BooleanField(default=False)
 
     created_by = models.ForeignKey(
         "accounts.Account", on_delete=models.PROTECT, related_name="hackathons_created",
@@ -113,6 +114,7 @@ class Hackathon(TimeStampedModel):
             models.Index(fields=["status", "registration_opens_at"], name="hackathon_status_regopen_idx"),
             # FR-DISC-002 tag filtering.
             GinIndex(fields=["tags"], name="hackathon_tags_gin_idx"),
+            models.Index(fields=["is_suspended"], name="hackathon_is_suspended_idx"),
         ]
         # NOTE: DB Design Sec 4.3 also calls for a pg_trgm GIN trigram
         # index on `title` for NFR-PERF-002's sub-1-second keyword search

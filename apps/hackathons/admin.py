@@ -18,13 +18,13 @@ class ChallengeTrackInline(admin.TabularInline):
 
 @admin.register(Hackathon)
 class HackathonAdmin(admin.ModelAdmin):
-    list_display = ("title", "host_org", "status", "location_mode", "registration_closes_at", "created_at")
-    list_filter = ("status", "location_mode")
+    list_display = ("title", "host_org", "status", "is_suspended", "location_mode", "registration_closes_at", "created_at")
+    list_filter = ("status", "is_suspended", "location_mode")
     search_fields = ("id", "title", "slug", "host_org__name")
     ordering = ("-created_at",)
     date_hierarchy = "created_at"
     autocomplete_fields = ("host_org", "created_by")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "is_suspended", "created_at", "updated_at")
     inlines = [ChallengeTrackInline]
     fieldsets = (
         (None, {"fields": ("id", "title", "slug", "description", "banner_url", "host_org")}),
@@ -34,6 +34,7 @@ class HackathonAdmin(admin.ModelAdmin):
         )}),
         ("Configuration", {"fields": ("location_mode", "rules", "prize_info", "eligibility_rules", "tags")}),
         ("Lifecycle", {"fields": ("status", "showcase_published_at")}),
+        ("Moderation", {"fields": ("is_suspended",)}),
         ("Ownership", {"fields": ("created_by",)}),
         ("Timestamps", {"fields": ("created_at", "updated_at")}),
     )

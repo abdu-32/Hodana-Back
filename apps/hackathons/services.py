@@ -141,13 +141,17 @@ def get_hackathon(*, hackathon_id, requester=None):
     hackathons -- same "FR over stale contract" call as
     organizations.UserPublicProfileView."""
     hackathon = _get_hackathon_or_404(hackathon_id)
-    if hackathon.status == "draft":
-        is_owner_organizer = bool(
-            requester and requester.is_authenticated
-            and _is_organizer_of_org(actor=requester, org_id=hackathon.host_org_id)
-        )
-        if not is_owner_organizer:
-            raise NotFound()
+    is_owner_organizer = bool(
+        requester and requester.is_authenticated
+        and _is_organizer_of_org(actor=requester, org_id=hackathon.host_org_id)
+    )
+    if hackathon.status == "draft" and not is_owner_organizer:
+        raise NotFound()
+
+    is_platform_admin = bool(requester and requester.is_authenticated and getattr(requester, "is_platform_admin", False))
+    if (hackathon.is_suspended or hackathon.host_org.is_suspended) and not (is_owner_organizer or is_platform_admin):
+        raise NotFound()
+
     return hackathon
 
 
@@ -158,7 +162,10 @@ def list_hackathons(*, keyword=None, tag=None, mode=None, status=None, limit=20,
     limit = max(1, min(int(limit), 100))
     offset = max(0, int(offset))
 
-    queryset = Hackathon.objects.filter(status__in=PUBLIC_STATUSES)
+    queryset = Hackathon.objects.filter(
+        status__in=PUBLIC_STATUSES, is_suspended=False, host_org__is_suspended=False,
+    )
+
 
     if status:
         if status not in PUBLIC_STATUSES:

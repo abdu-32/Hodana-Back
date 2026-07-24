@@ -44,6 +44,7 @@ class Organization(TimeStampedModel):
     type = models.CharField(max_length=20, choices=ORG_TYPE_CHOICES)
     contact_email = models.EmailField()
     primary_email_domain = models.TextField(null=True, blank=True)  # FR-ORG-001: optional
+    is_suspended = models.BooleanField(default=False)  # FR-ADMIN-001, set by apps.platform_admin
 
     verification_status = models.CharField(
         max_length=20, choices=VERIFICATION_STATUS_CHOICES, default="unverified"
@@ -61,6 +62,7 @@ class Organization(TimeStampedModel):
         indexes = [
             models.Index(fields=["primary_email_domain"]),  # FR-ORG-002 lookup
             models.Index(fields=["verification_status"]),  # FR-ORG-003 admin queue
+            models.Index(fields=["is_suspended"]),  # FR-ADMIN-001 discovery filter
         ]
 
     def __str__(self):
