@@ -4,21 +4,15 @@ analytics -- models
 Implements FR modules: ANALYTICS
 Depends on: registrations, teams, submissions
 
-Per Design Spec Sec 3.1: data shape and database-level constraints ONLY.
-No business logic here -- see services.py.
+Per DB Design Sec 4 traceability table: "FR-ANALYTICS-001 - FR-ANALYTICS-002
+-- Derived from `registration`, `team`, `submission` (no dedicated table;
+see Document 03 Sec 6 for the query/caching approach)". This app
+deliberately has no models of its own: every figure the dashboard and
+demographic breakdown show is computed on read, in services.py, from rows
+owned by apps.registrations, apps.teams, and apps.submissions.
 
-Per Design Spec Sec 3.3: every tenant-scoped model must use
-TenantScopedManager from apps.core and declare its scoping field.
-See Document 05 (Database Design) for the real fields/tables to implement.
+BR-011 ("no individual identifiable from the breakdown, minimum cohort
+size of 10") is likewise "enforced at the analytics query layer, not the
+schema" per DB Design Sec 6 -- see services.py, not a model constraint
+here.
 """
-
-from django.db import models
-
-# from apps.core.models import TimeStampedModel
-# from apps.core.managers import TenantScopedManager
-
-# class Example(TimeStampedModel):
-#     organization = models.ForeignKey("organizations.Organization", on_delete=models.CASCADE)
-#
-#     class Meta:
-#         app_label = "analytics"

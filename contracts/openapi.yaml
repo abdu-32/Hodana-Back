@@ -4,6 +4,60 @@ info:
   version: 1.0.0
   description: Hackathon and innovation-challenge platform API.
 paths:
+  /api/v1/analytics/hackathons/{hackathon_id}/dashboard:
+    get:
+      operationId: v1_analytics_hackathons_dashboard_retrieve
+      description: |-
+        GET /analytics/hackathons/{hackathon_id}/dashboard -- FR-ANALYTICS-001.
+        Registration count over time, team formation rate, and submission
+        conversion rate for one hackathon; restricted to that hackathon's
+        Organizer and to Platform Admins (services.get_registration_dashboard).
+      parameters:
+      - in: path
+        name: hackathon_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationDashboard'
+          description: ''
+  /api/v1/analytics/hackathons/{hackathon_id}/demographics:
+    get:
+      operationId: v1_analytics_hackathons_demographics_retrieve
+      description: |-
+        GET /analytics/hackathons/{hackathon_id}/demographics -- FR-ANALYTICS-002.
+        Aggregated, anonymized breakdown of registrants by university and
+        self-reported skill category; restricted the same way as the
+        dashboard above. Returns `available: false` with a placeholder,
+        rather than a 4xx, when the hackathon hasn't cleared BR-011's
+        10-registration cohort floor (services.get_demographic_breakdown).
+      parameters:
+      - in: path
+        name: hackathon_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DemographicBreakdown'
+          description: ''
   /api/v1/auth/login:
     post:
       operationId: v1_auth_login_create
@@ -2168,6 +2222,51 @@ components:
           minLength: 3
       required:
       - teamName
+    DemographicBreakdown:
+      type: object
+      description: |-
+        Implements FR-ANALYTICS-002. `available=False` (with empty
+        breakdown lists) is the BR-011 placeholder for a hackathon that
+        hasn't yet cleared the minimum cohort size, not an error response.
+      properties:
+        hackathonId:
+          type: string
+          format: uuid
+        available:
+          type: boolean
+        minimumCohortSize:
+          type: integer
+        currentCount:
+          type: integer
+        byUniversity:
+          type: array
+          items:
+            $ref: '#/components/schemas/DemographicBucket'
+        bySkill:
+          type: array
+          items:
+            $ref: '#/components/schemas/DemographicBucket'
+      required:
+      - available
+      - bySkill
+      - byUniversity
+      - currentCount
+      - hackathonId
+      - minimumCohortSize
+    DemographicBucket:
+      type: object
+      description: |-
+        One aggregated cohort in a FR-ANALYTICS-002 breakdown -- never
+        smaller than BR-011's minimum cohort size (see
+        services._bucket_with_privacy_floor).
+      properties:
+        label:
+          type: string
+        count:
+          type: integer
+      required:
+      - count
+      - label
     EligibilityStatusEnum:
       enum:
       - eligible
@@ -3093,6 +3192,44 @@ components:
       - userId
       - verificationStatus
       - withdrawnAt
+    RegistrationBucket:
+      type: object
+      description: One day's bucket in the FR-ANALYTICS-001 registration-over-time
+        chart.
+      properties:
+        date:
+          type: string
+          format: date
+        count:
+          type: integer
+      required:
+      - count
+      - date
+    RegistrationDashboard:
+      type: object
+      description: Implements FR-ANALYTICS-001's registration and conversion dashboard.
+      properties:
+        hackathonId:
+          type: string
+          format: uuid
+        registrationCount:
+          type: integer
+        registrationsOverTime:
+          type: array
+          items:
+            $ref: '#/components/schemas/RegistrationBucket'
+        teamFormationRate:
+          type: number
+          format: double
+        submissionConversionRate:
+          type: number
+          format: double
+      required:
+      - hackathonId
+      - registrationCount
+      - registrationsOverTime
+      - submissionConversionRate
+      - teamFormationRate
     ResendVerification:
       type: object
       properties:
