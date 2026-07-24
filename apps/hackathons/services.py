@@ -262,7 +262,9 @@ def update_hackathon(*, actor, hackathon_id, data):
     # (no Notification model/service to call) -- flagging as a known gap
     # rather than silently skipping it.
     if notify_participants:
-        pass  # TODO: apps.notifications.services.notify_hackathon_timeline_changed(hackathon)
+        from apps.notifications.services import notify_hackathon_timeline_changed
+
+        notify_hackathon_timeline_changed(hackathon)
 
     return hackathon
 
@@ -489,6 +491,14 @@ def screen_submission(*, actor, submission_id, eligibility_status, reason=""):
             target_type="submission", target_id=str(submission.id),
             metadata={"eligibilityStatus": eligibility_status, "reason": reason},
         )
+
+    # FR-ELIG-001 / FR-NOTIFY-001: "eligibility screening result" --
+    # fires for both a disqualification and a reinstatement to eligible,
+    # same reasoning as apps.showcase.publish_showcase's placement (after
+    # the state change is committed, not inside the atomic block).
+    from apps.notifications.services import notify_eligibility_screening_result
+
+    notify_eligibility_screening_result(submission)
 
     return submission
 

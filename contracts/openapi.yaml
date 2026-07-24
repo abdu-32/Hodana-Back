@@ -936,6 +936,84 @@ paths:
                 items:
                   $ref: '#/components/schemas/Score'
           description: ''
+  /api/v1/notifications/:
+    post:
+      operationId: v1_notifications_create
+      description: |-
+        POST /notifications -- Doc 04 `createNotification`. Organizer-only
+        (enforced in services.create_announcement, since the target
+        hackathon is in the request body, not a URL kwarg -- HasScopedRole
+        needs a URL kwarg to resolve scope_id from, same reasoning as
+        apps.hackathons.views.HackathonListCreateView's POST).
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/NotificationCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/NotificationCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+          description: ''
+  /api/v1/notifications/me:
+    get:
+      operationId: v1_notifications_me_list
+      description: |-
+        GET /notifications/me -- FR-NOTIFY-001's notification center. Not
+        yet in Doc 04; add it (same "Not yet in Doc 04" precedent as
+        apps/registrations/views.py). Strictly scoped to the requester
+        (services.list_my_notifications filters by actor).
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationDelivery'
+          description: ''
+  /api/v1/notifications/me/{delivery_id}/read:
+    post:
+      operationId: v1_notifications_me_read_create
+      description: |-
+        POST /notifications/me/{delivery_id}/read -- FR-NOTIFY-001: "the
+        in-app notification is marked unread until the user views the
+        notification center." Not yet in Doc 04; add it.
+      parameters:
+      - in: path
+        name: delivery_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationDelivery'
+          description: ''
   /api/v1/organizations/:
     post:
       operationId: v1_organizations_create
@@ -2070,6 +2148,16 @@ components:
       required:
       - name
       - sponsorOrgId
+    Channel55aEnum:
+      enum:
+      - email
+      - in_portal
+      - sms
+      type: string
+      description: |-
+        * `email` - Email
+        * `in_portal` - In-Portal
+        * `sms` - SMS
     CreateTeam:
       type: object
       description: POST /teams/hackathons/{hackathonId} -- FR-TEAM-001.
@@ -2545,6 +2633,105 @@ components:
       required:
       - email
       - password
+    Notification:
+      type: object
+      description: |-
+        Doc 04 `Notification` schema -- the single broadcast resource
+        returned by POST /notifications.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        hackathonId:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        message:
+          type: string
+        channel:
+          $ref: '#/components/schemas/Channel55aEnum'
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - channel
+      - createdAt
+      - hackathonId
+      - id
+      - message
+    NotificationCreateRequest:
+      type: object
+      description: POST /notifications -- Doc 04 `NotificationCreateRequest`.
+      properties:
+        hackathonId:
+          type: string
+          format: uuid
+        message:
+          type: string
+        channel:
+          allOf:
+          - $ref: '#/components/schemas/NotificationCreateRequestChannelEnum'
+          default: email
+      required:
+      - hackathonId
+      - message
+    NotificationCreateRequestChannelEnum:
+      enum:
+      - email
+      - in_portal
+      type: string
+      description: |-
+        * `email` - email
+        * `in_portal` - in_portal
+    NotificationDelivery:
+      type: object
+      description: |-
+        A single row of a user's own notification center (FR-NOTIFY-001).
+        Not yet in Doc 04 -- see the "Not yet in Doc 04; add it" precedent in
+        apps/registrations/views.py; add it here too once regenerated.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        notificationId:
+          type: string
+          format: uuid
+          readOnly: true
+        hackathonId:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        message:
+          type: string
+          readOnly: true
+        channel:
+          $ref: '#/components/schemas/Channel55aEnum'
+        status:
+          type: string
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        readAt:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - channel
+      - createdAt
+      - hackathonId
+      - id
+      - message
+      - notificationId
+      - readAt
+      - status
     NullEnum:
       enum:
       - null

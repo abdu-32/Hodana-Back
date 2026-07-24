@@ -10,9 +10,7 @@ requests.
 
 from datetime import timedelta
 
-from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
@@ -20,6 +18,7 @@ from rest_framework.exceptions import APIException, NotFound, PermissionDenied, 
 from apps.accounts.models import Account, RoleAssignment
 from apps.core.models import AuditLogEntry
 from apps.hackathons.models import Hackathon
+from apps.notifications.services import notify_invitation_response, notify_team_invitation
 from apps.registrations.models import Registration
 
 from .models import Team, TeamMember
@@ -41,19 +40,6 @@ class ConflictError(APIException):
     status_code = 409
     default_detail = "This action conflicts with the current state of the team."
     default_code = "conflict"
-
-
-def _send_mail(*, subject, message, to):
-    """Single seam to swap for a Celery task later. Synchronous for now,
-    same pattern as apps.registrations.services._send_mail -- apps.notifications
-    is still an unimplemented stub."""
-    send_mail(
-        subject=subject,
-        message=message,
-        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-        recipient_list=[to],
-        fail_silently=False,
-    )
 
 
 def _get_hackathon_or_404(hackathon_id):
@@ -178,14 +164,9 @@ def invite_member(*, actor, team_id, invitee_email):
         join_status="pending", expires_at=now + timedelta(days=INVITATION_EXPIRY_DAYS),
     )
 
-    _send_mail(
-        subject=f"You've been invited to join {team.team_name}",
-        message=(
-            f"{actor.full_name} invited you to join the team \"{team.team_name}\" "
-            f"for {team.hackathon.title}."
-        ),
-        to=invitee.contact_email or invitee.email,
-    )
+    # FR-TEAM-002 / FR-NOTIFY-001: "the invited user receives a
+    # notification with accept/decline actions."
+    notify_team_invitation(membership)
 
     return membership
 
@@ -224,6 +205,12 @@ def decline_invitation(*, actor, invitation_id):
     membership.join_status = "declined"
     membership.responded_at = timezone.now()
     membership.save(update_fields=["join_status", "responded_at"])
+
+    # FR-NOTIFY-001 "invitation response" event -- new addition; this
+    # response previously wasn't notified at all (only the original
+    # invite was, in invite_member above).
+    notify_invitation_response(membership)
+
     return membership
 
 
@@ -258,6 +245,12 @@ def accept_invitation(*, actor, invitation_id):
             actor_id=actor.id, action="team.member_joined",
             target_type="team", target_id=str(team.id),
         )
+
+    # FR-NOTIFY-001 "invitation response" event -- new addition, same as
+    # decline_invitation above. Outside the transaction, same reasoning
+    # as apps.registrations.register_for_hackathon's confirmation email:
+    # a notification failure shouldn't roll back a successful join.
+    notify_invitation_response(membership)
 
     return membership
 

@@ -17,3 +17,13 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.development")
 app = Celery("innovation_hub")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
+
+
+# TODO(notifications): once Celery Beat is enabled, add a periodic task
+# to CELERY_BEAT_SCHEDULE that calls
+# apps.notifications.services.notify_submission_deadline_reminder(hackathon)
+# ~24h before each hackathon's submission_closes_at (FR-NOTIFY-001/002).
+# The function itself is already implemented and tested -- it just has
+# no scheduler to call it yet. Same applies to
+# apps.notifications.services.purge_expired_in_app_notifications() for
+# the 90-day in-app retention rule -- run it daily.

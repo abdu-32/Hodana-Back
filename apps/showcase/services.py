@@ -102,8 +102,16 @@ def publish_showcase(*, actor, hackathon_id):
             target_type="hackathon",
             target_id=str(hackathon.id),
         )
-    return hackathon
 
+    # FR-JUDGE-004 / FR-NOTIFY-001/002: "judging results published" --
+    # the idempotency guard above (early return when already published)
+    # means this only fires on the actual publish transition, not on a
+    # re-confirming call.
+    from apps.notifications.services import notify_judging_results_published
+
+    notify_judging_results_published(hackathon)
+
+    return hackathon
 
 def unpublish_showcase(*, actor, hackathon_id):
     """POST /showcase/hackathons/{id}/unpublish -- FR-SHOWCASE-001/002.

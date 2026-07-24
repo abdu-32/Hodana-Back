@@ -5,15 +5,14 @@ Per Design Spec Sec 3.1: all business logic and cross-model orchestration
 lives here.
 """
 
-from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import APIException, NotFound, ValidationError
 
 from apps.core.models import AuditLogEntry
 from apps.hackathons.models import Hackathon
+from apps.notifications.services import notify_registration_confirmed
 from apps.organizations.models import Organization
 
 from .models import Registration
@@ -24,19 +23,6 @@ class ConflictError(APIException):
     status_code = 409
     default_detail = "You are already registered for this hackathon."
     default_code = "conflict"
-
-
-def _send_mail(*, subject, message, to):
-    """Single seam to swap for a Celery task later. Synchronous for now.
-    apps.notifications is still an unimplemented stub -- same pattern as
-    organizations/services.py and accounts/services.py."""
-    send_mail(
-        subject=subject,
-        message=message,
-        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-        recipient_list=[to],
-        fail_silently=False,
-    )
 
 
 def _get_hackathon_or_404(hackathon_id):
@@ -134,11 +120,8 @@ def register_for_hackathon(*, actor, hackathon_id, eligibility_confirmed=False, 
         )
 
     # FR-REG-001: confirmation notification sent on success (FR-NOTIFY-001).
-    _send_mail(
-        subject=f"You're registered for {hackathon.title}",
-        message=f"You have successfully registered for {hackathon.title}.",
-        to=actor.contact_email or actor.email,
-    )
+    # Cannot be opted out of -- see notifications.services.CRITICAL_CATEGORIES.
+    notify_registration_confirmed(registration)
 
     return registration
 

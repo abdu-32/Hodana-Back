@@ -279,3 +279,79 @@ class TestChallengeTracks:
         track = ChallengeTrackFactory(hackathon=hackathon)
         results = list(services.list_challenge_tracks(hackathon_id=hackathon.id))
         assert results == [track]
+
+# ---------------------------------------------------------------------------
+# FR-ELIG-001: screen a submission's eligibility
+# ---------------------------------------------------------------------------
+
+
+class TestScreenSubmission:
+    """screen_submission's own precondition/permission behavior wasn't
+    covered by any existing test before this notification wiring -- these
+    focus on the one thing that changed (the FR-NOTIFY-001 side effect),
+    plus the minimum surrounding coverage needed to reach it."""
+
+    @pytest.fixture
+    def locked_submission(self, organizer_account):
+        from apps.submissions.tests.factories import SubmissionFactory
+        from apps.teams.tests.factories import AcceptedTeamMemberFactory, TeamFactory
+
+        hackathon = ArchivedHackathonFactory(created_by=organizer_account)
+        team = TeamFactory(hackathon=hackathon)
+        AcceptedTeamMemberFactory(team=team, hackathon=hackathon, user=team.leader_user)
+        return SubmissionFactory(team=team, hackathon=hackathon)
+
+    def test_disqualifying_notifies_the_team(self, locked_submission, organizer_account):
+        from apps.notifications.models import NotificationDelivery
+
+        RoleAssignment.objects.create(
+            user=organizer_account, role="organizer", scope_type="organization",
+            scope_id=locked_submission.hackathon.host_org_id,
+        )
+
+        services.screen_submission(
+            actor=organizer_account, submission_id=locked_submission.id,
+            eligibility_status="disqualified", reason="Violated the no-AI-generated-code rule.",
+        )
+
+        assert NotificationDelivery.objects.filter(
+            user=locked_submission.team.leader_user, channel="in_portal",
+        ).exists()
+
+    def test_reinstating_to_eligible_also_notifies(self, locked_submission, organizer_account):
+        from apps.notifications.models import NotificationDelivery
+
+        RoleAssignment.objects.create(
+            user=organizer_account, role="organizer", scope_type="organization",
+            scope_id=locked_submission.hackathon.host_org_id,
+        )
+        locked_submission.eligibility_status = "disqualified"
+        locked_submission.save(update_fields=["eligibility_status"])
+
+        services.screen_submission(
+            actor=organizer_account, submission_id=locked_submission.id, eligibility_status="eligible",
+        )
+
+        assert NotificationDelivery.objects.filter(
+            user=locked_submission.team.leader_user, channel="in_portal",
+        ).exists()
+
+    def test_unlocked_submission_is_rejected_before_any_notification(self, organizer_account):
+        from apps.notifications.models import NotificationDelivery
+        from apps.submissions.tests.factories import SubmissionFactory
+        from apps.teams.tests.factories import TeamFactory
+
+        hackathon = PublishedHackathonFactory(created_by=organizer_account)  # submission_closes_at is in the future
+        team = TeamFactory(hackathon=hackathon)
+        submission = SubmissionFactory(team=team, hackathon=hackathon)
+        RoleAssignment.objects.create(
+            user=organizer_account, role="organizer", scope_type="organization", scope_id=hackathon.host_org_id,
+        )
+
+        with pytest.raises(ValidationError):
+            services.screen_submission(
+                actor=organizer_account, submission_id=submission.id, eligibility_status="disqualified",
+                reason="Too early to screen this one.",
+            )
+
+        assert not NotificationDelivery.objects.exists()
