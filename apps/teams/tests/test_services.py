@@ -369,6 +369,63 @@ class TestRemoveMember:
 
 
 # ---------------------------------------------------------------------------
+# FR-REG-002: called by apps.registrations on withdrawal
+# ---------------------------------------------------------------------------
+
+
+class TestRemoveMemberFromAllTeams:
+    def test_removes_an_accepted_membership(self, team, hackathon):
+        member = AccountFactory()
+        AcceptedTeamMemberFactory(team=team, hackathon=hackathon, user=member)
+
+        services.remove_member_from_all_teams(hackathon=hackathon, user=member)
+
+        assert not TeamMember.objects.filter(team=team, user=member).exists()
+
+    def test_deletes_pending_invitations_too(self, team, hackathon):
+        invitee = AccountFactory()
+        TeamMemberFactory(team=team, hackathon=hackathon, user=invitee, join_status="pending")
+
+        services.remove_member_from_all_teams(hackathon=hackathon, user=invitee)
+
+        assert not TeamMember.objects.filter(team=team, user=invitee).exists()
+
+    def test_owner_withdrawing_transfers_leadership(self, owner, team, hackathon):
+        successor = AccountFactory()
+        AcceptedTeamMemberFactory(team=team, hackathon=hackathon, user=successor)
+
+        services.remove_member_from_all_teams(hackathon=hackathon, user=owner)
+
+        team.refresh_from_db()
+        assert team.leader_user_id == successor.id
+
+    def test_last_member_withdrawing_deletes_the_team(self, owner, team, hackathon):
+        services.remove_member_from_all_teams(hackathon=hackathon, user=owner)
+
+        assert not Team.objects.filter(id=team.id).exists()
+
+    def test_user_with_no_team_membership_is_a_no_op(self, hackathon):
+        bystander = AccountFactory()
+
+        services.remove_member_from_all_teams(hackathon=hackathon, user=bystander)  # should not raise
+
+    def test_only_affects_the_given_hackathon(self, owner, team, hackathon):
+        """Same user, same account, a *different* hackathon's team --
+        must not be touched by a withdrawal scoped to `hackathon`."""
+        other_hackathon = PublishedHackathonFactory()
+        member = AccountFactory()
+        RegistrationFactory(user=member, hackathon=other_hackathon)
+        other_team = TeamFactory(hackathon=other_hackathon, leader_user=member)
+        AcceptedTeamMemberFactory(team=other_team, hackathon=other_hackathon, user=member)
+        AcceptedTeamMemberFactory(team=team, hackathon=hackathon, user=member)
+
+        services.remove_member_from_all_teams(hackathon=hackathon, user=member)
+
+        assert TeamMember.objects.filter(team=other_team, user=member).exists()
+        assert not TeamMember.objects.filter(team=team, user=member).exists()
+
+
+# ---------------------------------------------------------------------------
 # FR-TEAM-005: view team roster
 # ---------------------------------------------------------------------------
 

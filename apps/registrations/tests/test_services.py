@@ -228,6 +228,22 @@ class TestWithdrawRegistration:
         with pytest.raises(NotFound):
             services.withdraw_registration(actor=other_user, hackathon_id=registration.hackathon_id)
 
+    def test_withdrawing_removes_participant_from_their_team_roster(self, participant, registration):
+        """FR-REG-002: withdrawal must also vacate any team roster spot
+        the participant held for this hackathon (FR-TEAM-004)."""
+        from apps.teams.models import Team, TeamMember
+        from apps.teams.tests.factories import AcceptedTeamMemberFactory, TeamFactory
+
+        team = TeamFactory(hackathon=registration.hackathon, leader_user=participant)
+        AcceptedTeamMemberFactory(team=team, hackathon=registration.hackathon, user=participant)
+
+        services.withdraw_registration(actor=participant, hackathon_id=registration.hackathon_id)
+
+        assert not TeamMember.objects.filter(team=team, user=participant).exists()
+        # sole member withdrawing -- team.leave/remove semantics delete
+        # the now-empty team, same as leave_team's last-member case.
+        assert not Team.objects.filter(id=team.id).exists()
+
     def test_withdrawing_twice_is_rejected(self, participant, registration):
         services.withdraw_registration(actor=participant, hackathon_id=registration.hackathon_id)
 

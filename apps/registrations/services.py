@@ -140,6 +140,14 @@ def withdraw_registration(*, actor, hackathon_id):
     if timezone.now() >= registration.hackathon.submission_closes_at:
         raise ValidationError("Cannot withdraw after the submission deadline.")
 
+    # FR-REG-002 / FR-TEAM-004: leaving any team roster is a
+    # teams-app concern, not a registrations-app one -- deliberately a
+    # local import (not module-level) to avoid a hard import-time
+    # coupling between the two apps. Done inside the same transaction as
+    # the withdrawal itself so the two can't end up out of sync (e.g. a
+    # withdrawn registration whose team roster cleanup silently failed).
+    from apps.teams.services import remove_member_from_all_teams
+
     with transaction.atomic():
         registration.withdrawn_at = timezone.now()
         registration.save(update_fields=["withdrawn_at"])
@@ -147,12 +155,7 @@ def withdraw_registration(*, actor, hackathon_id):
             actor_id=actor.id, action="registration.withdrawn",
             target_type="registration", target_id=str(registration.id),
         )
-
-    # TODO: FR-REG-002 requires removing the participant from any team
-    # roster they belonged to (FR-TEAM-004). apps.teams is still an
-    # unimplemented stub with no Team model to reference -- wire this in
-    # once that app exists, e.g.:
-    #   apps.teams.services.remove_member_from_all_teams(hackathon=registration.hackathon, user=actor)
+        remove_member_from_all_teams(hackathon=registration.hackathon, user=actor)
 
     return registration
 

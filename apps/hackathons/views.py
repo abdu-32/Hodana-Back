@@ -139,6 +139,7 @@ class HackathonSubmissionScreeningView(APIView):
         results, total = services.list_submissions_for_screening(
             actor=request.user, hackathon_id=id,
             eligibility_status=request.query_params.get("eligibilityStatus"),
+            track_id=request.query_params.get("trackId"),
             limit=limit, offset=offset,
         )
         body = {

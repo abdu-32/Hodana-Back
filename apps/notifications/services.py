@@ -8,13 +8,14 @@ FR-NOTIFY-002 (SMS fallback for two of those events), instead of each
 app hand-rolling its own `send_mail` call.
 
 Design Spec Sec 3.2 describes this module as enqueuing jobs and "never
-sending synchronously" via a Celery Background Worker. Celery itself is
-explicitly disabled for now (see the commented-out block in
-config/settings/base.py: "DISABLED for now. Re-enable when you write the
-first task"), so -- same pragmatic choice already made by
-apps.registrations.services._send_mail and apps.teams.services._send_mail
--- sending happens synchronously here too, behind the one function
-(`_send_email`) that would become a Celery task's body later.
+sending synchronously" via a Celery Background Worker. Celery is now
+re-enabled (config/settings/base.py), but only for the two *periodic*
+jobs this app needed a scheduler for (see apps/notifications/tasks.py
+and CELERY_BEAT_SCHEDULE) -- request-triggered sends (registration
+confirmed, team invitation, etc.) still happen synchronously inline,
+same pragmatic choice already made by apps.registrations.services._send_mail
+and apps.teams.services._send_mail. Converting those to async Celery
+tasks behind `_send_email` is a separate, not-yet-scheduled piece of work.
 """
 
 from django.conf import settings
@@ -392,12 +393,11 @@ def mark_notification_read(*, actor, delivery_id):
 
 def purge_expired_in_app_notifications(*, now=None):
     """FR-NOTIFY-001: in-app notifications are "retained for 90 days."
-    No scheduler currently invokes this -- Celery Beat is disabled (see
-    module docstring) and no apps/*/management/commands package exists
-    yet anywhere in this project to run it another way. Exposed here as
-    the concrete, testable unit so wiring it to a management command or
-    a re-enabled Celery Beat schedule later is a one-line addition, not
-    new logic."""
+    Invoked daily by apps.notifications.tasks.purge_expired_in_app_notifications_task
+    via CELERY_BEAT_SCHEDULE (see config/settings/base.py). Kept as a
+    plain, `now`-injectable function here -- separate from the Celery
+    task wrapper -- so it stays trivially unit-testable without needing
+    a Celery worker in the test run."""
     from datetime import timedelta
 
     cutoff = (now or timezone.now()) - timedelta(days=90)

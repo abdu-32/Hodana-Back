@@ -324,6 +324,39 @@ def remove_member(*, actor, team_id, member_user_id):
         _detach_member(team=team, membership=membership, actor_id=actor.id)
 
 
+# ---- FR-REG-002: called by apps.registrations on withdrawal ----------------
+
+def remove_member_from_all_teams(*, hackathon, user):
+    """FR-REG-002 / FR-TEAM-004: called by
+    apps.registrations.services.withdraw_registration once a
+    participant's withdrawal is committed. Removes them from any team
+    roster they held in this hackathon (reusing the same leadership-
+    transfer / team-deletion handling as leave_team and remove_member),
+    and cancels any outstanding invitations addressed to them.
+
+    Deliberately does not call _require_roster_not_locked: the caller
+    (withdraw_registration) already rejects withdrawals at or after
+    submission_closes_at against the same hackathon, so by the time this
+    runs the roster is guaranteed unlocked -- re-checking here would just
+    duplicate that rule against the same field.
+    """
+    with transaction.atomic():
+        accepted_memberships = list(
+            TeamMember.objects.select_related("team").filter(
+                hackathon=hackathon, user=user, join_status="accepted",
+            )
+        )
+        for membership in accepted_memberships:
+            _detach_member(team=membership.team, membership=membership, actor_id=user.id)
+
+        # BR-001 only constrains *accepted* rows to one per hackathon --
+        # nothing stops multiple pending invitations existing at once,
+        # so clear all of them, not just one.
+        TeamMember.objects.filter(
+            hackathon=hackathon, user=user, join_status="pending",
+        ).delete()
+
+
 # ---- FR-TEAM-005: view team roster ------------------------------------------
 
 def get_team_roster(*, actor, team_id):

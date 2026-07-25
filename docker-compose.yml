@@ -1,9 +1,9 @@
 # Backend team's local dev stack. Nothing here depends on the frontend
 # repo, and nothing in the frontend repo depends on this file.
 #
-# Celery + Redis are removed for now (see config/settings/base.py and
-# README.md for how to bring them back — docker-compose.yml.celery-example
-# has the worker/beat/redis service definitions ready to paste back in).
+# Celery + Redis are re-enabled (see config/settings/base.py) now that
+# apps.notifications has periodic jobs (deadline reminders, 90-day purge)
+# that need a scheduler.
 #
 # Usage:
 #   docker compose up --build
@@ -24,7 +24,15 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
   api:
     build:
       context: .
@@ -38,6 +46,33 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  worker:
+    build:
+      context: .
+    command: celery -A config worker -l info -Q notifications,media,analytics,scheduled
+    volumes:
+      - .:/app
+    env_file:
+      - ./.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
+  beat:
+    build:
+      context: .
+    # Exactly one replica — never scale this service (see config/celery.py).
+    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+    env_file:
+      - ./.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 volumes:
   db_data:

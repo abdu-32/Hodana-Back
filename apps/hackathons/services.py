@@ -510,7 +510,7 @@ def screen_submission(*, actor, submission_id, eligibility_status, reason=""):
     return submission
 
 
-def list_submissions_for_screening(*, actor, hackathon_id, eligibility_status=None, limit=20, offset=0):
+def list_submissions_for_screening(*, actor, hackathon_id, eligibility_status=None, track_id=None, limit=20, offset=0):
     """GET /hackathons/{id}/submissions -- FR-ELIG-002 bulk screening
     view. Organizer-only listing of a hackathon's locked submissions
     (the pool FR-ELIG-001 actually operates on), optionally filtered by
@@ -519,10 +519,11 @@ def list_submissions_for_screening(*, actor, hackathon_id, eligibility_status=No
 
     Doc 04's listSubmissions operation on this path also accepts a
     `trackId` filter, shared with the general submissions-browsing use
-    case. Not implemented here: apps.submissions has no SubmissionTrack
-    model yet (FR-TRACK assignment -- assignSubmissionTrack /
-    removeSubmissionTrack -- is unimplemented), so there is nothing to
-    filter against. Flagging as a known gap rather than faking the filter.
+    case -- narrows the queue to submissions opted into that
+    apps.hackathons.ChallengeTrack (FR-TRACK, via
+    apps.submissions.SubmissionTrack). track_id is validated the same
+    way apps.submissions.services.opt_in_submission_to_track validates
+    it: must exist, and must belong to this hackathon.
     """
     from apps.submissions.models import Submission
 
@@ -533,6 +534,14 @@ def list_submissions_for_screening(*, actor, hackathon_id, eligibility_status=No
 
     if eligibility_status and eligibility_status not in ELIGIBILITY_STATUS_CHOICES:
         raise ValidationError({"eligibilityStatus": f"Must be one of {', '.join(ELIGIBILITY_STATUS_CHOICES)}."})
+
+    if track_id:
+        try:
+            track = ChallengeTrack.objects.get(id=track_id)
+        except (ChallengeTrack.DoesNotExist, ValueError, DjangoValidationError):
+            raise NotFound()
+        if track.hackathon_id != hackathon.id:
+            raise ValidationError({"trackId": "This track does not belong to the given hackathon."})
 
     limit = max(1, min(int(limit), 100))
     offset = max(0, int(offset))
@@ -549,6 +558,9 @@ def list_submissions_for_screening(*, actor, hackathon_id, eligibility_status=No
 
     if eligibility_status:
         queryset = queryset.filter(eligibility_status=eligibility_status)
+
+    if track_id:
+        queryset = queryset.filter(track_opt_ins__track_id=track_id)
 
     queryset = queryset.order_by("-submitted_at")
     total = queryset.count()

@@ -9,11 +9,10 @@ psycopg2-binary>=2.9
 djangorestframework-simplejwt>=5.3
 
 # Background jobs / cache / queue — Design Spec Sec 6.1-6.2
-# Disabled for now — see config/settings/base.py for re-enable instructions.
-# celery>=5.4
-# redis>=5.0
-# django-celery-beat>=2.6
-# django-celery-results>=2.5
+celery>=5.4
+redis>=5.0
+django-celery-beat>=2.6
+django-celery-results>=2.5
 
 # Object storage — S3-compatible, Design Spec Sec 6.3
 # Disabled for now — using local filesystem storage instead.

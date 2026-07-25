@@ -355,3 +355,101 @@ class TestScreenSubmission:
             )
 
         assert not NotificationDelivery.objects.exists()
+
+
+# ---------------------------------------------------------------------------
+# FR-ELIG-002: list submissions for screening (incl. trackId filter)
+# ---------------------------------------------------------------------------
+
+
+class TestListSubmissionsForScreening:
+    @pytest.fixture
+    def locked_hackathon(self, verified_org, organizer_account, organizer_role):
+        return ArchivedHackathonFactory(host_org=verified_org, created_by=organizer_account)
+
+    def _submission_in(self, hackathon):
+        from apps.submissions.tests.factories import SubmissionFactory
+        from apps.teams.tests.factories import TeamFactory
+
+        team = TeamFactory(hackathon=hackathon)
+        return SubmissionFactory(team=team, hackathon=hackathon)
+
+    def test_non_organizer_is_forbidden(self, locked_hackathon):
+        from apps.accounts.tests.factories import AccountFactory
+
+        stranger = AccountFactory()
+        with pytest.raises(PermissionDenied):
+            services.list_submissions_for_screening(actor=stranger, hackathon_id=locked_hackathon.id)
+
+    def test_before_submission_deadline_returns_empty(self, published_hackathon, organizer_account, organizer_role):
+        self._submission_in(published_hackathon)
+
+        results, total = services.list_submissions_for_screening(
+            actor=organizer_account, hackathon_id=published_hackathon.id,
+        )
+
+        assert results == []
+        assert total == 0
+
+    def test_lists_locked_submissions(self, locked_hackathon, organizer_account):
+        submission = self._submission_in(locked_hackathon)
+
+        results, total = services.list_submissions_for_screening(
+            actor=organizer_account, hackathon_id=locked_hackathon.id,
+        )
+
+        assert results == [submission]
+        assert total == 1
+
+    def test_filters_by_eligibility_status(self, locked_hackathon, organizer_account):
+        eligible = self._submission_in(locked_hackathon)
+        disqualified = self._submission_in(locked_hackathon)
+        disqualified.eligibility_status = "disqualified"
+        disqualified.save(update_fields=["eligibility_status"])
+
+        results, total = services.list_submissions_for_screening(
+            actor=organizer_account, hackathon_id=locked_hackathon.id, eligibility_status="disqualified",
+        )
+
+        assert results == [disqualified]
+        assert total == 1
+
+    def test_invalid_eligibility_status_is_rejected(self, locked_hackathon, organizer_account):
+        with pytest.raises(ValidationError):
+            services.list_submissions_for_screening(
+                actor=organizer_account, hackathon_id=locked_hackathon.id, eligibility_status="not-a-real-status",
+            )
+
+    def test_filters_by_track_id(self, locked_hackathon, organizer_account):
+        from apps.submissions.tests.factories import SubmissionTrackFactory
+
+        track = ChallengeTrackFactory(hackathon=locked_hackathon)
+        other_track = ChallengeTrackFactory(hackathon=locked_hackathon)
+
+        in_track = self._submission_in(locked_hackathon)
+        SubmissionTrackFactory(submission=in_track, track=track)
+
+        not_in_track = self._submission_in(locked_hackathon)
+        SubmissionTrackFactory(submission=not_in_track, track=other_track)
+
+        results, total = services.list_submissions_for_screening(
+            actor=organizer_account, hackathon_id=locked_hackathon.id, track_id=track.id,
+        )
+
+        assert results == [in_track]
+        assert total == 1
+
+    def test_unknown_track_id_raises_not_found(self, locked_hackathon, organizer_account):
+        with pytest.raises(NotFound):
+            services.list_submissions_for_screening(
+                actor=organizer_account, hackathon_id=locked_hackathon.id, track_id=uuid.uuid4(),
+            )
+
+    def test_track_from_a_different_hackathon_is_rejected(self, locked_hackathon, organizer_account):
+        other_hackathon = ArchivedHackathonFactory()
+        foreign_track = ChallengeTrackFactory(hackathon=other_hackathon)
+
+        with pytest.raises(ValidationError):
+            services.list_submissions_for_screening(
+                actor=organizer_account, hackathon_id=locked_hackathon.id, track_id=foreign_track.id,
+            )

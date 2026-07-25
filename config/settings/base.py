@@ -38,9 +38,8 @@ THIRD_PARTY_APPS = [
     "corsheaders",
     "drf_spectacular",
     "rest_framework_simplejwt.token_blacklist",
-    # Re-enable when background jobs are actually needed (see README):
-    # "django_celery_beat",
-    # "django_celery_results",
+    "django_celery_beat",
+    "django_celery_results",
     # Re-enable when moving off local filesystem storage (see README):
     # "storages",
 ]
@@ -192,30 +191,48 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:3000"])
 
 # --------------------------------------------------------------------------
-# Celery + Redis — DISABLED for now. Re-enable when you write the first
-# task that actually needs "run this later" or "run this on a schedule"
-# (e.g. FR-NOTIFY email dispatch, or the submission-deadline lock job).
-# To re-enable: uncomment this block + the two apps above, uncomment
-# celery/redis/django-celery-* in requirements/base.txt, uncomment
-# `redis`, `worker`, `beat` in docker-compose.yml, and uncomment the
-# celery_app import in config/__init__.py.
+# Celery + Redis — Design Spec Sec 6.1-6.2. Re-enabled now that
+# apps.notifications has periodic jobs to run: the 24h-before submission
+# deadline reminder and the 90-day in-app notification purge (see
+# apps/notifications/tasks.py and CELERY_BEAT_SCHEDULE below).
 # --------------------------------------------------------------------------
 
-# REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+from celery.schedules import crontab  # noqa: E402
 
-# CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=REDIS_URL)
-# CELERY_RESULT_BACKEND = "django-db"
-# CELERY_ACCEPT_CONTENT = ["json"]
-# CELERY_TASK_SERIALIZER = "json"
-# CELERY_RESULT_SERIALIZER = "json"
-# CELERY_TIMEZONE = TIME_ZONE
+REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
 
-# CELERY_TASK_ROUTES = {
-#     "apps.notifications.*": {"queue": "notifications"},
-#     "apps.submissions.tasks.*": {"queue": "media"},
-#     "apps.analytics.tasks.*": {"queue": "analytics"},
-#     "apps.hackathons.tasks.*": {"queue": "scheduled"},
-# }
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=REDIS_URL)
+CELERY_RESULT_BACKEND = "django-db"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+
+CELERY_TASK_ROUTES = {
+    "apps.notifications.*": {"queue": "notifications"},
+    "apps.submissions.tasks.*": {"queue": "media"},
+    "apps.analytics.tasks.*": {"queue": "analytics"},
+    "apps.hackathons.tasks.*": {"queue": "scheduled"},
+}
+
+# FR-NOTIFY-001/002 (deadline reminder) and FR-NOTIFY-001 (90-day in-app
+# retention) — the underlying service functions already existed and were
+# already tested; this is the scheduler that was missing. Runs hourly
+# rather than once/day so a hackathon whose submission_closes_at falls
+# anywhere inside a given hour still gets its reminder within that same
+# hour, without ever re-notifying the same hackathon twice (the task
+# only matches hackathons whose deadline is 23-24h out — see
+# apps.notifications.tasks.send_submission_deadline_reminders).
+CELERY_BEAT_SCHEDULE = {
+    "notifications-submission-deadline-reminders": {
+        "task": "apps.notifications.tasks.send_submission_deadline_reminders",
+        "schedule": crontab(minute=0),  # every hour, on the hour
+    },
+    "notifications-purge-expired-in-app": {
+        "task": "apps.notifications.tasks.purge_expired_in_app_notifications_task",
+        "schedule": crontab(hour=3, minute=0),  # once daily, 03:00 server time
+    },
+}
 
 CACHES = {
     "default": {
