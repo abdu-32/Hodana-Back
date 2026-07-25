@@ -644,12 +644,34 @@ paths:
         actions per row are PUT /submissions/{id}/eligibility, owned by
         apps.submissions per its own URL prefix -- see that app's views.py.
       parameters:
+      - in: query
+        name: eligibilityStatus
+        schema:
+          type: string
+        description: 'Filter by current screening status. One of: pending, eligible,
+          disqualified.'
       - in: path
         name: id
         schema:
           type: string
           format: uuid
         required: true
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Page size, 1-100. Default 20.
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Pagination offset. Default 0.
+      - in: query
+        name: trackId
+        schema:
+          type: string
+        description: Filter to submissions opted into this ChallengeTrack. Must belong
+          to the same hackathon.
       tags:
       - v1
       security:
