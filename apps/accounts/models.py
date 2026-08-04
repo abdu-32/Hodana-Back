@@ -46,7 +46,7 @@ class AccountManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields)
 
 
-OAUTH_PROVIDER_CHOICES = [("github", "GitHub")]
+OAUTH_PROVIDER_CHOICES = [("github", "GitHub"), ("google", "Google")]
 VERIFICATION_STATUS_CHOICES = [
     ("unverified", "Unverified"),
     ("pending", "Pending"),
@@ -73,6 +73,16 @@ class Account(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     profile_visibility = models.CharField(
         max_length=10, choices=PROFILE_VISIBILITY_CHOICES, default="public"
     )  # FR-PROFILE-002; not in Doc 05/04 yet -- added to make the FR enforceable
+
+    # FR-HACK-003 (age_restriction / geographic_restriction) + FR-ANALYTICS-002
+    # (age-bucketed demographics). Both self-reported by the account holder
+    # via FR-PROFILE-001 (update_profile), same trust level as `university`
+    # -- there's no ID-document verification step for either field, only
+    # basic sanity-range validation (see accounts/services.py). Nullable:
+    # a hackathon with no age/geographic restriction never requires them,
+    # and existing accounts predate these fields.
+    date_of_birth = models.DateField(null=True, blank=True)
+    country = models.CharField(max_length=2, null=True, blank=True)  # ISO 3166-1 alpha-2, e.g. "ET"
 
     oauth_provider = models.CharField(
         max_length=20, choices=OAUTH_PROVIDER_CHOICES, null=True, blank=True

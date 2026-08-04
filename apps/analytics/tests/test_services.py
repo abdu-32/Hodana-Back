@@ -3,7 +3,10 @@ Unit tests against analytics/services.py directly (Design Spec Sec 3.1),
 per the 80% coverage target in NFR-MAINT-001.
 """
 
+from datetime import date
+
 import pytest
+from freezegun import freeze_time
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied
 
@@ -166,6 +169,8 @@ def test_demographics_below_cohort_floor_is_placeholder(hackathon, organizer):
     assert result["current_count"] == 9
     assert result["by_university"] == []
     assert result["by_skill"] == []
+    assert result["by_age_group"] == []
+    assert result["by_country"] == []
 
 
 def test_demographics_at_cohort_floor_is_available(hackathon, organizer):
@@ -181,6 +186,49 @@ def test_demographics_at_cohort_floor_is_available(hackathon, organizer):
     assert result["current_count"] == 10
     assert result["by_university"] == [{"label": "Addis Ababa University", "count": 10}]
     assert result["by_skill"] == [{"label": "python", "count": 10}]
+
+
+@freeze_time("2026-01-15")
+def test_demographics_buckets_by_age_group(hackathon, organizer):
+    for i in range(10):
+        RegistrationFactory(
+            hackathon=hackathon,
+            user=AccountFactory(date_of_birth=date(2001, 6, 1)),  # 24 -> "18-24"
+        )
+
+    result = services.get_demographic_breakdown(actor=organizer, hackathon_id=hackathon.id)
+
+    assert result["by_age_group"] == [{"label": "18-24", "count": 10}]
+
+
+@freeze_time("2026-01-15")
+def test_demographics_registrants_without_date_of_birth_are_excluded_from_age_bucket(hackathon, organizer):
+    for i in range(9):
+        RegistrationFactory(
+            hackathon=hackathon,
+            user=AccountFactory(date_of_birth=date(2001, 6, 1)),  # 24 -> "18-24"
+        )
+    # Tenth registrant clears the overall cohort floor but never filled in
+    # date_of_birth -- shouldn't be silently counted into any age bucket.
+    RegistrationFactory(hackathon=hackathon, user=AccountFactory(date_of_birth=None))
+
+    result = services.get_demographic_breakdown(actor=organizer, hackathon_id=hackathon.id)
+
+    assert result["current_count"] == 10
+    # Only 9 people reported an age, and 9 is below the 10-person
+    # per-bucket privacy floor (_bucket_with_privacy_floor) -- same rule
+    # applied to every other bucket -- so it folds into "Other" rather
+    # than appearing as its own "18-24" label.
+    assert result["by_age_group"] == [{"label": "Other", "count": 9}]
+
+
+def test_demographics_buckets_by_country(hackathon, organizer):
+    for i in range(10):
+        RegistrationFactory(hackathon=hackathon, user=AccountFactory(country="ET"))
+
+    result = services.get_demographic_breakdown(actor=organizer, hackathon_id=hackathon.id)
+
+    assert result["by_country"] == [{"label": "ET", "count": 10}]
 
 
 def test_demographics_folds_small_buckets_into_other(hackathon, organizer):

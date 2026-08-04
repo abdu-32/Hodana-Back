@@ -14,6 +14,7 @@ app_name = "accounts"
 urlpatterns = [
     path("auth/signup", views.SignupView.as_view(), name="signup"),
     path("auth/login", views.LoginView.as_view(), name="login"),
+    path("auth/oauth/<str:provider>/login", views.OAuthLoginView.as_view(), name="oauth-login"),
     path("auth/refresh", views.RefreshView.as_view(), name="refresh"),
     path("auth/verify-email", views.VerifyEmailView.as_view(), name="verify-email"),
     path(

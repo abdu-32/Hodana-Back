@@ -9,7 +9,7 @@ list are included for branch coverage of services.py.
 """
 
 import uuid
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 from django.utils import timezone
@@ -24,6 +24,20 @@ from apps.registrations.models import Registration
 from apps.accounts.tests.factories import AccountFactory
 
 from .factories import RegistrationFactory, WithdrawnRegistrationFactory
+
+
+def _years_ago(n):
+    """A date of birth n years before real 'today'. Deliberately NOT
+    frozen-time-based: published_hackathon's registration_opens_at/
+    closes_at are computed from the real clock at fixture setup, which
+    runs before a @freeze_time on the test body takes effect -- freezing
+    to a fixed date there knocks 'now' outside that window and the
+    registration-open check fails before eligibility is ever reached."""
+    today = timezone.now().date()
+    try:
+        return today.replace(year=today.year - n)
+    except ValueError:  # Feb 29 with no leap year n years back
+        return today.replace(year=today.year - n, day=28)
 
 # ---------------------------------------------------------------------------
 # FR-REG-001: register for a hackathon
@@ -194,6 +208,100 @@ class TestRegisterForHackathon:
 
         registration = services.register_for_hackathon(actor=participant, hackathon_id=published_hackathon.id)
         assert registration.status == "registered"
+
+    # -- age_restriction ------------------------------------------------
+
+    def test_age_restriction_allows_participant_within_range(self, published_hackathon):
+        published_hackathon.eligibility_rules = {"age_restriction": {"min_age": 18, "max_age": 30}}
+        published_hackathon.save(update_fields=["eligibility_rules"])
+
+        participant = AccountFactory(date_of_birth=_years_ago(24))
+        registration = services.register_for_hackathon(actor=participant, hackathon_id=published_hackathon.id)
+        assert registration.status == "registered"
+
+    def test_age_restriction_blocks_participant_below_minimum(self, published_hackathon):
+        published_hackathon.eligibility_rules = {"age_restriction": {"min_age": 18}}
+        published_hackathon.save(update_fields=["eligibility_rules"])
+
+        too_young = AccountFactory(date_of_birth=_years_ago(11))
+
+        with pytest.raises(ValidationError) as exc_info:
+            services.register_for_hackathon(actor=too_young, hackathon_id=published_hackathon.id)
+        assert exc_info.value.detail["eligibility"]["rule"] == "age_restriction"
+
+    def test_age_restriction_blocks_participant_above_maximum(self, published_hackathon):
+        published_hackathon.eligibility_rules = {"age_restriction": {"max_age": 25}}
+        published_hackathon.save(update_fields=["eligibility_rules"])
+
+        too_old = AccountFactory(date_of_birth=_years_ago(46))
+
+        with pytest.raises(ValidationError) as exc_info:
+            services.register_for_hackathon(actor=too_old, hackathon_id=published_hackathon.id)
+        assert exc_info.value.detail["eligibility"]["rule"] == "age_restriction"
+
+    def test_age_restriction_blocks_when_date_of_birth_not_set(self, published_hackathon):
+        published_hackathon.eligibility_rules = {"age_restriction": {"min_age": 18}}
+        published_hackathon.save(update_fields=["eligibility_rules"])
+
+        no_dob = AccountFactory(date_of_birth=None)
+
+        with pytest.raises(ValidationError) as exc_info:
+            services.register_for_hackathon(actor=no_dob, hackathon_id=published_hackathon.id)
+        assert exc_info.value.detail["eligibility"]["rule"] == "age_restriction"
+
+    # -- geographic_restriction -------------------------------------------
+
+    def test_geographic_restriction_allows_participant_in_allowed_country(self, published_hackathon):
+        published_hackathon.eligibility_rules = {"geographic_restriction": {"allowed_countries": ["ET"]}}
+        published_hackathon.save(update_fields=["eligibility_rules"])
+
+        local = AccountFactory(country="ET")
+        registration = services.register_for_hackathon(actor=local, hackathon_id=published_hackathon.id)
+        assert registration.status == "registered"
+
+    def test_geographic_restriction_is_case_insensitive(self, published_hackathon):
+        published_hackathon.eligibility_rules = {"geographic_restriction": {"allowed_countries": ["et"]}}
+        published_hackathon.save(update_fields=["eligibility_rules"])
+
+        local = AccountFactory(country="ET")
+        registration = services.register_for_hackathon(actor=local, hackathon_id=published_hackathon.id)
+        assert registration.status == "registered"
+
+    def test_geographic_restriction_blocks_participant_outside_allowed_countries(self, published_hackathon):
+        published_hackathon.eligibility_rules = {"geographic_restriction": {"allowed_countries": ["ET"]}}
+        published_hackathon.save(update_fields=["eligibility_rules"])
+
+        abroad = AccountFactory(country="US")
+
+        with pytest.raises(ValidationError) as exc_info:
+            services.register_for_hackathon(actor=abroad, hackathon_id=published_hackathon.id)
+        assert exc_info.value.detail["eligibility"]["rule"] == "geographic_restriction"
+
+    def test_geographic_restriction_blocks_when_country_not_set(self, published_hackathon):
+        published_hackathon.eligibility_rules = {"geographic_restriction": {"allowed_countries": ["ET"]}}
+        published_hackathon.save(update_fields=["eligibility_rules"])
+
+        no_country = AccountFactory(country=None)
+
+        with pytest.raises(ValidationError) as exc_info:
+            services.register_for_hackathon(actor=no_country, hackathon_id=published_hackathon.id)
+        assert exc_info.value.detail["eligibility"]["rule"] == "geographic_restriction"
+
+    def test_combined_age_and_geographic_restrictions_both_enforced(self, published_hackathon):
+        published_hackathon.eligibility_rules = {
+            "age_restriction": {"min_age": 18},
+            "geographic_restriction": {"allowed_countries": ["ET"]},
+        }
+        published_hackathon.save(update_fields=["eligibility_rules"])
+
+        eligible = AccountFactory(date_of_birth=_years_ago(26), country="ET")
+        registration = services.register_for_hackathon(actor=eligible, hackathon_id=published_hackathon.id)
+        assert registration.status == "registered"
+
+        wrong_country = AccountFactory(date_of_birth=_years_ago(26), country="US")
+        with pytest.raises(ValidationError) as exc_info:
+            services.register_for_hackathon(actor=wrong_country, hackathon_id=published_hackathon.id)
+        assert exc_info.value.detail["eligibility"]["rule"] == "geographic_restriction"
 
 
 # ---------------------------------------------------------------------------

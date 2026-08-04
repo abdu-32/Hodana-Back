@@ -89,16 +89,33 @@ def register_organization(*, actor, name, type, contact_email, primary_email_dom
             target_type="organization", target_id=str(organization.id),
         )
 
-    _attempt_domain_verification(organization=organization, actor=actor)
+    _attempt_domain_fast_track(organization=organization, actor=actor)
     return organization
 
 
-# ---- FR-ORG-002: domain-based verification ---------------------------------
+# ---- FR-ORG-002: domain-matched fast-track (revised) ------------------------
 
-def _attempt_domain_verification(*, organization, actor):
-    """Same-request auto-verify. No-op (leaves `unverified`) if there's no
-    declared domain, it doesn't match the actor's email domain, or it isn't
-    on the recognized-institution list -- falls through to FR-ORG-003."""
+def _attempt_domain_fast_track(*, organization, actor):
+    """Same-request fast-track into the FR-ORG-003 pending queue. No-op
+    (leaves `unverified`) if there's no declared domain, it doesn't match
+    the actor's email domain, or it isn't on the recognized-institution
+    list -- in all those cases the org just sits `unverified` until the
+    organizer submits documents per FR-ORG-003.
+
+    IMPORTANT: this intentionally no longer sets `verified_status` straight
+    to "verified". A domain match only proves the registrant *has an email
+    address* at that domain -- e.g. any student at a university -- not that
+    they're authorized to represent that institution as an organization on
+    the platform. Treating "the org's declared domain happens to match my
+    own inbox" as sufficient identity/authority proof was the original
+    design; it let anyone with a university email auto-verify "the
+    university" itself with zero human review. Instead, a domain match now
+    only fast-tracks the organization straight into the pending-review
+    queue (skipping straight past the "no signal at all" unverified state)
+    with `domain_fast_tracked=True`, so a Platform Admin sees why it's
+    there and can approve it quickly -- but a human still always makes the
+    actual verification decision via review_organization_verification
+    below, same as any other FR-ORG-003 submission."""
     if not organization.primary_email_domain:
         return organization
 
@@ -108,12 +125,13 @@ def _attempt_domain_verification(*, organization, actor):
     if organization.primary_email_domain not in _recognized_domains():
         return organization
 
-    organization.verification_status = "verified"
-    organization.verified_at = timezone.now()
-    organization.save(update_fields=["verification_status", "verified_at", "updated_at"])
+    organization.verification_status = "pending"
+    organization.domain_fast_tracked = True
+    organization.save(update_fields=["verification_status", "domain_fast_tracked", "updated_at"])
     AuditLogEntry.objects.create(
-        actor_id=actor.id, action="organization.domain_verified",
+        actor_id=actor.id, action="organization.domain_matched_fast_tracked",
         target_type="organization", target_id=str(organization.id),
+        metadata={"domain": organization.primary_email_domain},
     )
     return organization
 
@@ -157,8 +175,13 @@ def submit_verification_documents(*, actor, organization_id, file_urls):
 
 def get_pending_verification_queue():
     """FR-ADMIN-001's review dashboard reads from this, not the model directly,
-    so the query shape stays owned by this app."""
-    return Organization.objects.filter(verification_status="pending").order_by("created_at")
+    so the query shape stays owned by this app. Domain-fast-tracked orgs sort
+    first: they carry a stronger corroborating signal (a matching recognized
+    institutional domain) than a cold FR-ORG-003 document submission, so an
+    admin working the queue top-down clears the "easy" ones first."""
+    return Organization.objects.filter(verification_status="pending").order_by(
+        "-domain_fast_tracked", "created_at"
+    )
 
 
 def review_organization_verification(*, admin, organization_id, decision, rejection_reason=None):

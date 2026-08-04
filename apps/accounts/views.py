@@ -65,6 +65,31 @@ class LoginView(APIView):
         return Response(body, status=status.HTTP_200_OK)
 
 
+class OAuthLoginView(APIView):
+    """POST /auth/oauth/{provider}/login -- FR-AUTH-005. Not yet in Doc 04;
+    add it. `provider` is a URL path segment (github|google), not a body
+    field -- services.oauth_login validates it against
+    Account.oauth_provider's model choices, so an unsupported value 404s
+    at the URL resolver rather than reaching the service layer at all."""
+
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        request=serializers.OAuthLoginSerializer,
+        responses={200: serializers.AuthResponseSerializer, 201: serializers.AuthResponseSerializer},
+    )
+    def post(self, request, provider):
+        serializer = serializers.OAuthLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        account, tokens, created = services.oauth_login(
+            provider=provider,
+            code=serializer.validated_data["code"],
+            redirect_uri=serializer.validated_data["redirect_uri"],
+        )
+        body = serializers.AuthResponseSerializer({**tokens, "user": account}).data
+        return Response(body, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
 class RefreshView(APIView):
     """POST /auth/refresh -- FR-AUTH-002. Replaces SimpleJWT's stock
     TokenRefreshView: that view neither matches the contract's response

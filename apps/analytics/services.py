@@ -26,6 +26,7 @@ from collections import Counter
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied
 
 from apps.accounts.models import RoleAssignment
@@ -174,13 +175,34 @@ def _bucket_with_privacy_floor(counts, *, min_size=MIN_COHORT_SIZE):
     return kept
 
 
+def _age_bucket(date_of_birth, *, as_of):
+    """Coarse, fixed buckets rather than raw age -- an exact age next to a
+    small headcount is itself a re-identification risk even after the
+    BR-011 cohort floor is applied to the bucket as a whole."""
+    age = as_of.year - date_of_birth.year - ((as_of.month, as_of.day) < (date_of_birth.month, date_of_birth.day))
+    if age < 18:
+        return "Under 18"
+    if age <= 24:
+        return "18-24"
+    if age <= 34:
+        return "25-34"
+    if age <= 44:
+        return "35-44"
+    return "45+"
+
+
 def get_demographic_breakdown(*, actor, hackathon_id):
     """Implements FR-ANALYTICS-002.
 
     An aggregated, anonymized breakdown of active registrants by
-    university/institution and self-reported skill category. Below the
-    BR-011 cohort-size floor, returns a placeholder rather than partial
-    data, per that FR's own acceptance criterion.
+    university/institution, self-reported skill category, age group, and
+    country -- the latter two read off Account.date_of_birth/country
+    (FR-PROFILE-001, self-reported, same trust level as `university`).
+    Below the BR-011 cohort-size floor, returns a placeholder rather than
+    partial data, per that FR's own acceptance criterion; the same
+    per-bucket floor (`_bucket_with_privacy_floor`) also applies to every
+    individual age/country/university/skill bucket once that overall
+    floor is cleared.
     """
     hackathon = _get_hackathon_or_404(hackathon_id)
     _require_analytics_access(actor=actor, hackathon=hackathon)
@@ -200,10 +222,15 @@ def get_demographic_breakdown(*, actor, hackathon_id):
             "current_count": current_count,
             "by_university": [],
             "by_skill": [],
+            "by_age_group": [],
+            "by_country": [],
         }
 
+    today = timezone.now().date()
     university_counts = Counter()
     skill_counts = Counter()
+    age_counts = Counter()
+    country_counts = Counter()
     for registration in registrants:
         university = (registration.user.university or "").strip()
         if university:
@@ -212,6 +239,10 @@ def get_demographic_breakdown(*, actor, hackathon_id):
             skill = (skill or "").strip()
             if skill:
                 skill_counts[skill] += 1
+        if registration.user.date_of_birth:
+            age_counts[_age_bucket(registration.user.date_of_birth, as_of=today)] += 1
+        if registration.user.country:
+            country_counts[registration.user.country.strip().upper()] += 1
 
     return {
         "hackathon_id": str(hackathon.id),
@@ -220,4 +251,6 @@ def get_demographic_breakdown(*, actor, hackathon_id):
         "current_count": current_count,
         "by_university": _bucket_with_privacy_floor(university_counts),
         "by_skill": _bucket_with_privacy_floor(skill_counts),
+        "by_age_group": _bucket_with_privacy_floor(age_counts),
+        "by_country": _bucket_with_privacy_floor(country_counts),
     }

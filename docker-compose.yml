@@ -5,6 +5,13 @@
 # apps.notifications has periodic jobs (deadline reminders, 90-day purge)
 # that need a scheduler.
 #
+# `migrate` is a one-off container: it runs `manage.py migrate` and exits.
+# api/worker/beat all depend on it finishing successfully first, so the
+# django_celery_beat_* tables (and everything else) are guaranteed to
+# exist before those services touch the database — no more manual
+# `docker compose run --rm api python manage.py migrate` after a fresh
+# `docker compose up --build`.
+#
 # Usage:
 #   docker compose up --build
 
@@ -24,6 +31,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
   redis:
     image: redis:7-alpine
     ports:
@@ -33,6 +41,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  migrate:
+    build:
+      context: .
+    command: python manage.py migrate
+    volumes:
+      - .:/app
+    env_file:
+      - ./.env
+    depends_on:
+      db:
+        condition: service_healthy
+
   api:
     build:
       context: .
@@ -44,8 +65,9 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
   worker:
     build:
       context: .
@@ -55,8 +77,8 @@ services:
     env_file:
       - ./.env
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
@@ -70,9 +92,10 @@ services:
     env_file:
       - ./.env
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
+
 volumes:
   db_data:

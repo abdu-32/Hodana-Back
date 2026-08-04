@@ -20,3 +20,6 @@ django-celery-results>=2.5
 
 # API docs (generated from Document 04's contract)
 drf-spectacular>=0.27
+
+# OAuth sign-in (FR-AUTH-005) -- server-side code exchange with GitHub/Google
+requests>=2.31

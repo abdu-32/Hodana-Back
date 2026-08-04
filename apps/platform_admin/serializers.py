@@ -37,10 +37,18 @@ class AdminOrganizationSerializer(serializers.ModelSerializer):
     verificationStatus = serializers.CharField(source="verification_status", read_only=True)
     isSuspended = serializers.BooleanField(source="is_suspended", read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    # Lets the admin dashboard show "domain matched -- fast tracked" as a
+    # quick-approve hint, without implying the org is already verified: a
+    # domain match alone no longer sets verificationStatus to "verified"
+    # (organizations.services._attempt_domain_fast_track).
+    domainFastTracked = serializers.BooleanField(source="domain_fast_tracked", read_only=True)
 
     class Meta:
         model = Organization
-        fields = ["id", "name", "type", "contactEmail", "verificationStatus", "isSuspended", "createdAt"]
+        fields = [
+            "id", "name", "type", "contactEmail", "verificationStatus",
+            "domainFastTracked", "isSuspended", "createdAt",
+        ]
 
 
 class AdminHackathonSerializer(serializers.ModelSerializer):

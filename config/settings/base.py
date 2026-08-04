@@ -30,6 +30,7 @@ DJANGO_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.postgres",  # for JSONField, see Doc 08 Sec 3.2
 ]
 
 THIRD_PARTY_APPS = [
@@ -265,7 +266,38 @@ FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@innovationhub.local")
 
 # --------------------------------------------------------------------------
-# FR-ORG-002 — recognized institutional domains for auto-verification.
+# FR-AUTH-005 -- OAuth sign-in (GitHub, Google). Client secrets are
+# server-side only: the frontend only ever sees the public client_id (to
+# build the provider's own authorize URL) and the one-time `code` it gets
+# back, which this backend then exchanges -- see apps/accounts/oauth.py.
+# Get these from https://github.com/settings/developers (GitHub) and
+# https://console.cloud.google.com/apis/credentials (Google); set the
+# provider's "Authorization callback URL" to
+# {FRONTEND_URL}/auth/oauth/{provider}/callback (or wherever the frontend
+# route lives) with the exact host/scheme it will actually run on.
+# --------------------------------------------------------------------------
+
+OAUTH_PROVIDERS = {
+    "github": {
+        "client_id": env("GITHUB_CLIENT_ID", default=""),
+        "client_secret": env("GITHUB_CLIENT_SECRET", default=""),
+        "token_url": "https://github.com/login/oauth/access_token",
+        "user_url": "https://api.github.com/user",
+        "emails_url": "https://api.github.com/user/emails",
+    },
+    "google": {
+        "client_id": env("GOOGLE_CLIENT_ID", default=""),
+        "client_secret": env("GOOGLE_CLIENT_SECRET", default=""),
+        "token_url": "https://oauth2.googleapis.com/token",
+        "user_url": "https://openidconnect.googleapis.com/v1/userinfo",
+    },
+}
+
+# --------------------------------------------------------------------------
+# FR-ORG-002 — recognized institutional domains for the domain-matched
+# fast-track into FR-ORG-003's pending review queue (NOT auto-verification
+# -- a Platform Admin always makes the final verified/not-verified call;
+# see apps/organizations/services.py::_attempt_domain_fast_track).
 # Comma-separated in RECOGNIZED_INSTITUTIONAL_DOMAINS env var, e.g.:
 #   RECOGNIZED_INSTITUTIONAL_DOMAINS=aau.edu.et,aastu.edu.et,bdu.edu.et
 # The two defaults below are only a working example (both confirmed live

@@ -52,3 +52,5 @@ class DemographicBreakdownSerializer(serializers.Serializer):
     currentCount = serializers.IntegerField(source="current_count")
     byUniversity = DemographicBucketSerializer(many=True, source="by_university")
     bySkill = DemographicBucketSerializer(many=True, source="by_skill")
+    byAgeGroup = DemographicBucketSerializer(many=True, source="by_age_group")
+    byCountry = DemographicBucketSerializer(many=True, source="by_country")

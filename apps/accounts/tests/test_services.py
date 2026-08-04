@@ -10,6 +10,8 @@ representative list are included for branch coverage of services.py.
 
 import re
 import uuid
+from datetime import date, timedelta
+from unittest.mock import patch
 
 import pytest
 from freezegun import freeze_time
@@ -18,6 +20,8 @@ from django.utils import timezone
 from rest_framework.exceptions import AuthenticationFailed, NotFound, ValidationError
 
 from apps.accounts import services
+from apps.accounts.models import Account
+from apps.accounts.oauth import OAuthProviderError
 from apps.core.models import AuditLogEntry
 
 TOKEN_RE = re.compile(r"token=([^\s]+)")
@@ -228,6 +232,139 @@ class TestRefreshAccessToken:
 
 
 # ---------------------------------------------------------------------------
+# FR-AUTH-005: OAuth sign-in (GitHub / Google)
+# ---------------------------------------------------------------------------
+
+
+def _oauth_profile(**overrides):
+    base = {
+        "subject": "gh-123",
+        "email": "newoauthuser@example.com",
+        "email_verified": True,
+        "full_name": "New OAuth User",
+        "avatar_url": "",
+    }
+    base.update(overrides)
+    return base
+
+
+class TestOAuthLogin:
+    def test_creates_new_verified_account_when_no_match(self):
+        profile = _oauth_profile()
+        with patch("apps.accounts.services.oauth_adapters.exchange_code_for_profile", return_value=profile):
+            account, tokens, created = services.oauth_login(
+                provider="github", code="abc", redirect_uri="https://app.example/callback",
+            )
+
+        assert created is True
+        assert account.email == "newoauthuser@example.com"
+        assert account.verification_status == "verified"
+        assert account.email_verified_at is not None
+        assert account.oauth_provider == "github"
+        assert account.oauth_subject == "gh-123"
+        assert account.has_usable_password() is False
+        assert "access" in tokens and "refresh" in tokens
+        assert AuditLogEntry.objects.filter(
+            action="account.registered_via_oauth", target_id=str(account.id),
+        ).exists()
+
+    def test_logs_in_on_existing_identity_match(self, verified_account):
+        verified_account.oauth_provider = "github"
+        verified_account.oauth_subject = "gh-999"
+        verified_account.save(update_fields=["oauth_provider", "oauth_subject"])
+
+        profile = _oauth_profile(subject="gh-999", email="different-inbox@example.com")
+        with patch("apps.accounts.services.oauth_adapters.exchange_code_for_profile", return_value=profile):
+            account, tokens, created = services.oauth_login(
+                provider="github", code="abc", redirect_uri="https://app.example/callback",
+            )
+
+        assert created is False
+        assert account.id == verified_account.id
+        assert AuditLogEntry.objects.filter(
+            action="account.oauth_login", target_id=str(account.id),
+        ).exists()
+
+    def test_links_existing_account_by_provider_verified_email(self, verified_account):
+        assert verified_account.oauth_provider is None
+        profile = _oauth_profile(email=verified_account.email, subject="gh-777")
+
+        with patch("apps.accounts.services.oauth_adapters.exchange_code_for_profile", return_value=profile):
+            account, tokens, created = services.oauth_login(
+                provider="github", code="abc", redirect_uri="https://app.example/callback",
+            )
+
+        assert created is False
+        assert account.id == verified_account.id
+        account.refresh_from_db()
+        assert account.oauth_provider == "github"
+        assert account.oauth_subject == "gh-777"
+        assert AuditLogEntry.objects.filter(
+            action="account.oauth_linked", target_id=str(account.id),
+        ).exists()
+
+    def test_refuses_to_link_when_provider_email_is_not_verified(self, verified_account):
+        profile = _oauth_profile(email=verified_account.email, email_verified=False)
+
+        with patch("apps.accounts.services.oauth_adapters.exchange_code_for_profile", return_value=profile):
+            with pytest.raises(ValidationError):
+                services.oauth_login(provider="github", code="abc", redirect_uri="https://app.example/callback")
+
+        verified_account.refresh_from_db()
+        assert verified_account.oauth_provider is None  # not silently linked
+
+    def test_refuses_to_create_account_when_email_is_not_verified(self):
+        profile = _oauth_profile(email="unverified-newcomer@example.com", email_verified=False)
+
+        with patch("apps.accounts.services.oauth_adapters.exchange_code_for_profile", return_value=profile):
+            with pytest.raises(ValidationError):
+                services.oauth_login(provider="github", code="abc", redirect_uri="https://app.example/callback")
+
+        assert not Account.objects.filter(email="unverified-newcomer@example.com").exists()
+
+    def test_second_provider_does_not_overwrite_an_existing_link(self, verified_account):
+        verified_account.oauth_provider = "github"
+        verified_account.oauth_subject = "gh-1"
+        verified_account.save(update_fields=["oauth_provider", "oauth_subject"])
+
+        profile = _oauth_profile(email=verified_account.email, subject="google-1")
+        with patch("apps.accounts.services.oauth_adapters.exchange_code_for_profile", return_value=profile):
+            account, tokens, created = services.oauth_login(
+                provider="google", code="abc", redirect_uri="https://app.example/callback",
+            )
+
+        account.refresh_from_db()
+        assert created is False
+        assert account.oauth_provider == "github"  # untouched, not clobbered by the google login
+        assert account.oauth_subject == "gh-1"
+
+    def test_unsupported_provider_is_rejected(self):
+        with pytest.raises(ValidationError):
+            services.oauth_login(provider="facebook", code="abc", redirect_uri="https://app.example/callback")
+
+    def test_suspended_account_cannot_log_in_via_oauth(self, verified_account):
+        verified_account.oauth_provider = "github"
+        verified_account.oauth_subject = "gh-1"
+        verified_account.is_suspended = True
+        verified_account.save(update_fields=["oauth_provider", "oauth_subject", "is_suspended"])
+
+        profile = _oauth_profile(subject="gh-1")
+        with patch("apps.accounts.services.oauth_adapters.exchange_code_for_profile", return_value=profile):
+            with pytest.raises(AuthenticationFailed):
+                services.oauth_login(provider="github", code="abc", redirect_uri="https://app.example/callback")
+
+    def test_provider_exchange_error_propagates_as_validation_error(self):
+        with patch(
+            "apps.accounts.services.oauth_adapters.exchange_code_for_profile",
+            side_effect=OAuthProviderError(),
+        ):
+            with pytest.raises(ValidationError):
+                services.oauth_login(
+                    provider="github", code="bad-code", redirect_uri="https://app.example/callback",
+                )
+
+
+# ---------------------------------------------------------------------------
 # FR-AUTH-004: password reset
 # ---------------------------------------------------------------------------
 
@@ -333,6 +470,44 @@ class TestUpdateProfile:
     def test_no_fields_provided_does_not_touch_the_row(self, verified_account):
         account = services.update_profile(account=verified_account, data={})
         assert account.id == verified_account.id
+
+    def test_valid_date_of_birth_and_country_are_stored(self, verified_account):
+        account = services.update_profile(
+            account=verified_account,
+            data={"date_of_birth": date(2000, 6, 15), "country": "et"},
+        )
+        assert account.date_of_birth == date(2000, 6, 15)
+        assert account.country == "ET"  # normalized to uppercase
+
+    def test_future_date_of_birth_is_rejected(self, verified_account):
+        with pytest.raises(ValidationError):
+            services.update_profile(
+                account=verified_account, data={"date_of_birth": date.today() + timedelta(days=1)},
+            )
+
+    @freeze_time("2026-01-15")
+    def test_date_of_birth_under_minimum_age_is_rejected(self, verified_account):
+        with pytest.raises(ValidationError):
+            services.update_profile(
+                account=verified_account, data={"date_of_birth": date(2020, 1, 1)},  # 6 years old
+            )
+
+    def test_implausibly_old_date_of_birth_is_rejected(self, verified_account):
+        with pytest.raises(ValidationError):
+            services.update_profile(
+                account=verified_account, data={"date_of_birth": date(1850, 1, 1)},
+            )
+
+    @pytest.mark.parametrize("bad_country", ["ETH", "E", "12", ""])
+    def test_malformed_country_code_is_rejected(self, verified_account, bad_country):
+        if bad_country == "":
+            # Blank clears the field rather than erroring -- same
+            # "falsy is a no-op" treatment as the other optional fields.
+            account = services.update_profile(account=verified_account, data={"country": bad_country})
+            assert account.country == ""
+            return
+        with pytest.raises(ValidationError):
+            services.update_profile(account=verified_account, data={"country": bad_country})
 
 
 # ---------------------------------------------------------------------------

@@ -23,19 +23,6 @@ class SignupSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, trim_whitespace=False)
     fullName = serializers.CharField(source="full_name", max_length=255, required=False, default="")
-    oauthProvider = serializers.ChoiceField(
-        source="oauth_provider", choices=["github"], required=False, allow_null=True
-    )
-    oauthToken = serializers.CharField(source="oauth_token", required=False, allow_blank=True)
-
-    def validate(self, attrs):
-        provider = attrs.get("oauth_provider")
-        token = attrs.get("oauth_token")
-        if bool(provider) != bool(token):
-            raise serializers.ValidationError(
-                "oauthProvider and oauthToken must be provided together."
-            )
-        return attrs
 
 
 class LoginSerializer(serializers.Serializer):
@@ -70,6 +57,17 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     newPassword = serializers.CharField(source="new_password", write_only=True, trim_whitespace=False)
 
 
+class OAuthLoginSerializer(serializers.Serializer):
+    """POST /auth/oauth/{provider}/login -- FR-AUTH-005. `provider` itself
+    comes from the URL (validated against Account.oauth_provider's choices
+    in services.oauth_login), same pattern as the `id` path param on
+    organizations.OrganizationVerificationReviewView -- not duplicated
+    into the request body."""
+
+    code = serializers.CharField()
+    redirectUri = serializers.CharField(source="redirect_uri")
+
+
 # --------------------------------------------------------------------------
 # Profile
 # --------------------------------------------------------------------------
@@ -96,6 +94,8 @@ class UserProfileSerializer(serializers.Serializer):
     skills = serializers.ListField(child=serializers.CharField(), read_only=True)
     avatarUrl = serializers.CharField(source="avatar_url", read_only=True)
     portfolioUrl = serializers.CharField(source="portfolio_url", read_only=True)
+    dateOfBirth = serializers.DateField(source="date_of_birth", read_only=True, allow_null=True)
+    country = serializers.CharField(read_only=True, allow_null=True)
     roles = serializers.SerializerMethodField()
     verificationStatus = serializers.CharField(source="verification_status", read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
@@ -137,6 +137,8 @@ class UserUpdateSerializer(serializers.Serializer):
     avatarUrl = serializers.CharField(source="avatar_url", required=False, allow_blank=True)
     portfolioUrl = serializers.URLField(source="portfolio_url", required=False, allow_blank=True)
     contactEmail = serializers.EmailField(source="contact_email", required=False, allow_null=True)
+    dateOfBirth = serializers.DateField(source="date_of_birth", required=False, allow_null=True)
+    country = serializers.CharField(required=False, allow_null=True, allow_blank=True, max_length=2)
 
     def validate_skills(self, value):
         if len(value) > 15:  # FR-PROFILE-001

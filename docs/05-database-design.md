@@ -92,7 +92,7 @@ Tables are grouped by the Django app that owns them, matching the module-to-requ
 
 #### `account`
 
-Implements FR-AUTH-001 through FR-AUTH-004, FR-PROFILE-001 through FR-PROFILE-003.
+Implements FR-AUTH-001 through FR-AUTH-005, FR-PROFILE-001 through FR-PROFILE-003.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
@@ -102,13 +102,15 @@ Implements FR-AUTH-001 through FR-AUTH-004, FR-PROFILE-001 through FR-PROFILE-00
 | `full_name` | TEXT | `NOT NULL` | |
 | `bio` | TEXT | | |
 | `university` | TEXT | | |
+| `date_of_birth` | DATE | | Self-reported (FR-PROFILE-001), same trust level as `university`. Feeds FR-HACK-003's `age_restriction` eligibility check and FR-ANALYTICS-002's age-group breakdown. Range-validated (13-120 years) at the service layer, not by a DB constraint. |
+| `country` | CHAR(2) | | ISO 3166-1 alpha-2. Self-reported. Feeds FR-HACK-003's `geographic_restriction` and FR-ANALYTICS-002's country breakdown. |
 | `skills` | TEXT[] | | |
 | `avatar_url` | TEXT | | Pointer into object storage (Document 03 §6.3). |
 | `portfolio_url` | TEXT | | |
 | `contact_email` | CITEXT | | Distinct from login `email`; nullable, falls back to `email` if unset. |
-| `oauth_provider` | TEXT | `CHECK (oauth_provider IN ('github'))` | Nullable. |
+| `oauth_provider` | TEXT | `CHECK (oauth_provider IN ('github','google'))` | Nullable. FR-AUTH-005. One linked provider per account row (see accounts/services.py::oauth_login for the documented limitation this implies). |
 | `oauth_subject` | TEXT | | External provider's user ID. |
-| `verification_status` | TEXT | `CHECK (...) NOT NULL DEFAULT 'unverified'` | `unverified` \| `pending` \| `verified`. Drives FR-AUTH-003. |
+| `verification_status` | TEXT | `CHECK (...) NOT NULL DEFAULT 'unverified'` | `unverified` \| `pending` \| `verified`. Drives FR-AUTH-003. OAuth sign-ups (FR-AUTH-005) start `verified` directly -- the provider already vouched for the email. |
 | `email_verified_at` | TIMESTAMPTZ | | |
 | `is_platform_admin` | BOOLEAN | `NOT NULL DEFAULT false` | The one global role per [Document 03, Section 4.3](03-software-design-specification.md#43-authorization-model-rbac-tenant-scoped). |
 | `token_version` | INTEGER | `NOT NULL DEFAULT 0` | Incremented on password reset, logout-all, or admin suspension (FR-AUTH-004, NFR-SEC-005). Indexed jointly with `id` via the PK for the per-request check described in Document 03 §4.3. |
@@ -160,12 +162,13 @@ Implements FR-ORG-001 through FR-ORG-003.
 | `type` | TEXT | `CHECK (type IN ('university','company','ngo','government')) NOT NULL` | |
 | `contact_email` | CITEXT | `NOT NULL` | |
 | `primary_email_domain` | TEXT | | Nullable per FR-ORG-001. |
-| `verification_status` | TEXT | `CHECK (...) NOT NULL DEFAULT 'unverified'` | `unverified` \| `pending` \| `verified`. `pending` is entered when FR-ORG-002 does not apply and documents await review (FR-ORG-003). |
-| `verified_at` | TIMESTAMPTZ | | |
+| `verification_status` | TEXT | `CHECK (...) NOT NULL DEFAULT 'unverified'` | `unverified` \| `pending` \| `verified`. `pending` is entered either via FR-ORG-002's domain-matched fast-track or when documents are submitted for cold FR-ORG-003 review -- in both cases a `Platform Admin` decision is still required to reach `verified`. |
+| `domain_fast_tracked` | BOOLEAN | `NOT NULL DEFAULT false` | Set when FR-ORG-002's domain match fired. Informational only -- does **not** grant `verified` status by itself; lets the FR-ORG-003 admin queue surface and prioritize these. |
+| `verified_at` | TIMESTAMPTZ | | Set only by a `Platform Admin`'s FR-ORG-003 approval, never by domain match alone. |
 | `created_by_user_id` | UUID | `NOT NULL, FK → account.id` | The Organizer of record, per FR-ORG-001's implicit `RoleAssignment`. |
 | `created_at` / `updated_at` | TIMESTAMPTZ | `NOT NULL` | |
 
-**Indexes:** (`primary_email_domain`) for the FR-ORG-002 auto-verification lookup; (`verification_status`) for the FR-ORG-003 admin review queue.
+**Indexes:** (`primary_email_domain`) for the FR-ORG-002 fast-track lookup; (`verification_status`) and (`domain_fast_tracked`) for the FR-ORG-003 admin review queue.
 
 #### `org_verification_document`
 

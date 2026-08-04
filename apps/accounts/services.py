@@ -28,6 +28,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 
 from apps.core.models import AuditLogEntry
 
+from . import oauth as oauth_adapters
 from .models import Account
 
 
@@ -275,12 +276,56 @@ def reset_password(*, token, new_password):
 
 # ---- FR-PROFILE-001: update own profile ------------------------------------
 
-PROFILE_UPDATE_FIELDS = ["full_name", "bio", "university", "skills", "avatar_url", "portfolio_url", "contact_email"]
+PROFILE_UPDATE_FIELDS = [
+    "full_name", "bio", "university", "skills", "avatar_url", "portfolio_url",
+    "contact_email", "date_of_birth", "country",
+]
+
+# FR-HACK-003's age_restriction is enforced against this in
+# registrations/services.py -- this floor is a separate, always-on
+# platform-wide sanity check on the field itself, not a substitute for
+# any specific hackathon's own age rule.
+MIN_ACCOUNT_AGE_YEARS = 13
+MAX_REASONABLE_AGE_YEARS = 120
+
+
+def _validate_date_of_birth(value):
+    if value is None:
+        return value
+    today = timezone.now().date()
+    if value > today:
+        raise ValidationError({"dateOfBirth": "Date of birth cannot be in the future."})
+    age_years = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+    if age_years < MIN_ACCOUNT_AGE_YEARS:
+        raise ValidationError({
+            "dateOfBirth": f"You must be at least {MIN_ACCOUNT_AGE_YEARS} years old to use Innovation Hub."
+        })
+    if age_years > MAX_REASONABLE_AGE_YEARS:
+        raise ValidationError({"dateOfBirth": "Please enter a valid date of birth."})
+    return value
+
+
+def _validate_country(value):
+    """ISO 3166-1 alpha-2 only (e.g. "ET") -- matches the shape
+    registrations/services.py expects when checking a hackathon's
+    geographic_restriction.allowed_countries."""
+    if not value:
+        return value
+    value = value.strip().upper()
+    if len(value) != 2 or not value.isalpha():
+        raise ValidationError({"country": "Country must be a 2-letter ISO 3166-1 code, e.g. 'ET'."})
+    return value
 
 
 def update_profile(*, account, data):
     """`account` is always the requester -- the view resolves 401/403
     before calling this."""
+    data = dict(data)
+    if "date_of_birth" in data:
+        data["date_of_birth"] = _validate_date_of_birth(data["date_of_birth"])
+    if "country" in data:
+        data["country"] = _validate_country(data["country"])
+
     fields_to_update = []
     for field in PROFILE_UPDATE_FIELDS:
         if field in data:
@@ -342,3 +387,113 @@ def refresh_access_token(*, refresh_token):
         pass  # token_blacklist app not installed -- rotate without blacklisting
 
     return account, _issue_tokens(account)
+
+
+# ---- FR-AUTH-005: OAuth sign-in (GitHub / Google) --------------------------
+
+def oauth_login(*, provider, code, redirect_uri):
+    """Exchanges an authorization code for the provider's own token
+    server-side (the client secret never touches the frontend -- see
+    accounts/oauth.py), then resolves it to an Account in one of three ways:
+
+      1. An existing (oauth_provider, oauth_subject) match -> log them in.
+      2. No identity match, but an existing Account with the same email,
+         AND the provider marks that email `email_verified` -> link this
+         OAuth identity to that account and log them in. An email the
+         provider does NOT vouch for is never used for this match --
+         trusting an unverified claim would let someone take over (or
+         silently register against) somebody else's inbox just by typing
+         it into their GitHub/Google profile.
+      3. Neither -> create a brand-new Account, already verified (the
+         provider vouching for the email substitutes for FR-AUTH-003's
+         normal click-through step), with an unusable password.
+
+    Returns (account, tokens, created).
+
+    Known simplification: Account.oauth_provider/oauth_subject is a single
+    pair per row, not a list, so an account can have at most one *linked*
+    provider at a time. Logging in via a second provider with the same
+    verified email still succeeds (case 2's `elif` below), but the second
+    provider's identity is intentionally not written over the first --
+    doing so would silently break the original provider's ability to
+    match this account on its next login. Multiple simultaneously linked
+    identities per account would need a separate join table; flagging
+    that as a deliberate scope cut for this MVP, not an oversight.
+    """
+    provider_choices = dict(Account._meta.get_field("oauth_provider").choices)
+    if provider not in provider_choices:
+        raise ValidationError({"provider": "Unsupported OAuth provider."})
+
+    profile = oauth_adapters.exchange_code_for_profile(
+        provider=provider, code=code, redirect_uri=redirect_uri,
+    )
+    email = profile["email"].strip().lower()
+
+    account = Account.objects.filter(oauth_provider=provider, oauth_subject=profile["subject"]).first()
+    created = False
+
+    if account is None:
+        existing = Account.objects.filter(email__iexact=email).first()
+
+        if existing is not None and profile["email_verified"]:
+            account = existing
+            if not account.oauth_provider:
+                account.oauth_provider = provider
+                account.oauth_subject = profile["subject"]
+                account.save(update_fields=["oauth_provider", "oauth_subject", "updated_at"])
+                AuditLogEntry.objects.create(
+                    actor_id=account.id, action="account.oauth_linked",
+                    target_type="account", target_id=str(account.id),
+                    metadata={"provider": provider},
+                )
+            # else: already linked to a different provider -- log in via
+            # the verified email match without disturbing that link.
+
+        elif existing is not None:
+            # Matching email exists, but this provider won't vouch for it.
+            raise ValidationError({
+                "email": "An account with this email already exists. Log in with your password, or "
+                         f"verify this email address with {provider} first."
+            })
+
+        elif not profile["email_verified"]:
+            raise ValidationError({
+                "email": f"Your {provider} email address is not verified. Please verify it with "
+                         f"{provider} first, or sign up with a password instead."
+            })
+
+        else:
+            with transaction.atomic():
+                account = Account.objects.create_user(
+                    email=email, password=None,
+                    full_name=profile["full_name"] or email.split("@", 1)[0],
+                )
+                account.set_unusable_password()
+                account.oauth_provider = provider
+                account.oauth_subject = profile["subject"]
+                account.verification_status = "verified"
+                account.email_verified_at = timezone.now()
+                if profile.get("avatar_url"):
+                    account.avatar_url = profile["avatar_url"]
+                account.save()
+                AuditLogEntry.objects.create(
+                    actor_id=account.id, action="account.registered_via_oauth",
+                    target_type="account", target_id=str(account.id),
+                    metadata={"provider": provider},
+                )
+            created = True
+
+    if not account.is_active:  # suspended or soft-deleted
+        raise AuthenticationFailed(GENERIC_AUTH_ERROR)
+
+    account.last_login_at = timezone.now()
+    account.save(update_fields=["last_login_at", "updated_at"])
+
+    if not created:
+        AuditLogEntry.objects.create(
+            actor_id=account.id, action="account.oauth_login",
+            target_type="account", target_id=str(account.id),
+            metadata={"provider": provider},
+        )
+
+    return account, _issue_tokens(account), created

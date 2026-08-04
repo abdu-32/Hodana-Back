@@ -31,13 +31,14 @@ class OrganizationSerializer(serializers.ModelSerializer):
     )
     verificationStatus = serializers.CharField(source="verification_status", read_only=True)
     verifiedAt = serializers.DateTimeField(source="verified_at", read_only=True)
+    domainFastTracked = serializers.BooleanField(source="domain_fast_tracked", read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
 
     class Meta:
         model = Organization
         fields = [
             "id", "name", "type", "contactEmail", "primaryEmailDomain",
-            "verificationStatus", "verifiedAt", "createdAt",
+            "verificationStatus", "verifiedAt", "domainFastTracked", "createdAt",
         ]
 
 

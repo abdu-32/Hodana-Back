@@ -173,22 +173,23 @@ Requirements are grouped by module in the order a hackathon moves through the co
 - The organization is created in `unverified` status.
 **Dependencies:** FR-AUTH-002.
 
-#### FR-ORG-002 — Domain-based verification
+#### FR-ORG-002 — Domain-matched fast-track (revised)
 
 **Priority:** Must Have
-**Description:** The system shall automatically verify an organization when the registering user's account email domain matches the organization's declared primary email domain against a maintained list of recognized Ethiopian institutional domains.
+**Description:** The system shall fast-track an organization into the FR-ORG-003 pending-review queue -- but shall NOT set it directly to `verified` -- when the registering user's account email domain matches the organization's declared primary email domain against a maintained list of recognized Ethiopian institutional domains.
+**Revision note:** the original version of this requirement auto-verified on domain match alone. That was found to be a real authority-impersonation gap: a matching domain proves the registrant holds an email address at that domain (e.g. any enrolled student at a university), not that they are authorized to represent that institution as an Organizer. A human `Platform Admin` decision (FR-ORG-003) is now required in every case; domain match only changes queue priority and same-request feedback, not trust level.
 **Preconditions:** FR-ORG-001 has completed and a primary email domain was declared.
 **Acceptance Criteria:**
-- Verification completes within the same request cycle as registration (no manual step, no added latency beyond normal request handling).
-- Organizations verified this way display a "Verified" badge on every public page referencing them.
-- A domain not present on the recognized-institution list falls through to FR-ORG-003 rather than being auto-verified.
+- The fast-track determination (and the resulting `pending` status) completes within the same request cycle as registration (no manual step, no added latency beyond normal request handling) -- only the final verification decision is manual.
+- Organizations that fast-tracked this way are flagged for admins (`domainFastTracked`) and sorted first in the FR-ORG-003 review queue, but display no "Verified" badge until a `Platform Admin` approves them.
+- A domain not present on the recognized-institution list, or not matching the registrant's own email, falls through to plain FR-ORG-003 (no fast-track flag) rather than being auto-verified or prioritized.
 **Dependencies:** FR-ORG-001.
 
 #### FR-ORG-003 — Manual verification review
 
 **Priority:** Must Have
-**Description:** The system shall allow a `Platform Admin` to review and approve or reject organizations that did not qualify for automatic domain verification, based on submitted supporting evidence (e.g., an official registration document or a letter of introduction).
-**Preconditions:** The organization is in `unverified` status and FR-ORG-002 did not apply.
+**Description:** The system shall allow a `Platform Admin` to review and approve or reject every organization awaiting verification -- both those fast-tracked by FR-ORG-002 and those relying solely on submitted supporting evidence (e.g., an official registration document or a letter of introduction). There is no path to `verified` status that skips this human decision.
+**Preconditions:** The organization is in `unverified` or `pending` status (FR-ORG-002 may or may not have applied).
 **Acceptance Criteria:**
 - The registering Organizer can upload up to 3 supporting documents (PDF or image, 10 MB max each).
 - A `Platform Admin` can approve (organization becomes `verified`) or reject (organization remains `unverified`, with a required rejection reason visible to the Organizer).

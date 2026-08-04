@@ -339,6 +339,51 @@ paths:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
           description: ''
+  /api/v1/auth/oauth/{provider}/login:
+    post:
+      operationId: v1_auth_oauth_login_create
+      description: |-
+        POST /auth/oauth/{provider}/login -- FR-AUTH-005. Not yet in Doc 04;
+        add it. `provider` is a URL path segment (github|google), not a body
+        field -- services.oauth_login validates it against
+        Account.oauth_provider's model choices, so an unsupported value 404s
+        at the URL resolver rather than reaching the service layer at all.
+      parameters:
+      - in: path
+        name: provider
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthLogin'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OAuthLogin'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OAuthLogin'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+          description: ''
   /api/v1/auth/password-reset:
     post:
       operationId: v1_auth_password_reset_create
@@ -2374,6 +2419,9 @@ components:
         verificationStatus:
           type: string
           readOnly: true
+        domainFastTracked:
+          type: boolean
+          readOnly: true
         isSuspended:
           type: boolean
           readOnly: true
@@ -2384,6 +2432,7 @@ components:
       required:
       - contactEmail
       - createdAt
+      - domainFastTracked
       - id
       - isSuspended
       - name
@@ -2620,8 +2669,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DemographicBucket'
+        byAgeGroup:
+          type: array
+          items:
+            $ref: '#/components/schemas/DemographicBucket'
+        byCountry:
+          type: array
+          items:
+            $ref: '#/components/schemas/DemographicBucket'
       required:
       - available
+      - byAgeGroup
+      - byCountry
       - bySkill
       - byUniversity
       - currentCount
@@ -3213,14 +3272,22 @@ components:
       - notificationId
       - readAt
       - status
-    NullEnum:
-      enum:
-      - null
-    OauthProviderEnum:
-      enum:
-      - github
-      type: string
-      description: '* `github` - github'
+    OAuthLogin:
+      type: object
+      description: |-
+        POST /auth/oauth/{provider}/login -- FR-AUTH-005. `provider` itself
+        comes from the URL (validated against Account.oauth_provider's choices
+        in services.oauth_login), same pattern as the `id` path param on
+        organizations.OrganizationVerificationReviewView -- not duplicated
+        into the request body.
+      properties:
+        code:
+          type: string
+        redirectUri:
+          type: string
+      required:
+      - code
+      - redirectUri
     OrgVerificationDocument:
       type: object
       properties:
@@ -3322,6 +3389,9 @@ components:
           type: string
           format: date-time
           readOnly: true
+        domainFastTracked:
+          type: boolean
+          readOnly: true
         createdAt:
           type: string
           format: date-time
@@ -3329,6 +3399,7 @@ components:
       required:
       - contactEmail
       - createdAt
+      - domainFastTracked
       - id
       - name
       - primaryEmailDomain
@@ -3868,13 +3939,6 @@ components:
           type: string
           default: ''
           maxLength: 255
-        oauthProvider:
-          nullable: true
-          oneOf:
-          - $ref: '#/components/schemas/OauthProviderEnum'
-          - $ref: '#/components/schemas/NullEnum'
-        oauthToken:
-          type: string
       required:
       - email
       - password
@@ -4247,6 +4311,15 @@ components:
         portfolioUrl:
           type: string
           readOnly: true
+        dateOfBirth:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        country:
+          type: string
+          readOnly: true
+          nullable: true
         roles:
           type: array
           items:
@@ -4262,7 +4335,9 @@ components:
       required:
       - avatarUrl
       - bio
+      - country
       - createdAt
+      - dateOfBirth
       - email
       - fullName
       - id
@@ -4305,6 +4380,14 @@ components:
           type: string
           format: email
           nullable: true
+        dateOfBirth:
+          type: string
+          format: date
+          nullable: true
+        country:
+          type: string
+          nullable: true
+          maxLength: 2
     VerifyEmail:
       type: object
       description: |-

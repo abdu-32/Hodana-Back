@@ -51,6 +51,18 @@ class Organization(TimeStampedModel):
     )
     verified_at = models.DateTimeField(null=True, blank=True)
 
+    # FR-ORG-002 (revised): a matching recognized institutional domain is
+    # no longer sufficient on its own to reach `verified` -- it only
+    # fast-tracks the organization straight into the FR-ORG-003 pending
+    # queue (skipping the "no signal at all" unverified state) with this
+    # flag set, so a Platform Admin can see *why* it's in the queue and
+    # approve it with one click. This closes the "any student with an
+    # @university.edu email can auto-verify 'the university' as an
+    # organization" gap: domain match proves the registrant has an email
+    # at that domain, not that they're authorized to represent it, so a
+    # human still has to sign off either way. See services.py.
+    domain_fast_tracked = models.BooleanField(default=False)
+
     created_by = models.ForeignKey(
         "accounts.Account",
         on_delete=models.PROTECT,
@@ -63,6 +75,7 @@ class Organization(TimeStampedModel):
             models.Index(fields=["primary_email_domain"]),  # FR-ORG-002 lookup
             models.Index(fields=["verification_status"]),  # FR-ORG-003 admin queue
             models.Index(fields=["is_suspended"]),  # FR-ADMIN-001 discovery filter
+            models.Index(fields=["domain_fast_tracked"]),  # admin queue triage/sort
         ]
 
     def __str__(self):

@@ -106,12 +106,21 @@ class TestRegisterOrganization:
 
 
 # ---------------------------------------------------------------------------
-# FR-ORG-002: domain-based auto-verification
+# FR-ORG-002 (revised): domain-matched fast-track -- NOT auto-verification.
+#
+# A matching recognized institutional domain used to set verification_status
+# straight to "verified" in the same request. That let anyone holding an
+# email at a recognized domain -- e.g. any student at a university, not
+# just its registrar/admin staff -- instantly stand up a fully "verified"
+# organization for that institution with zero human review. It's now
+# downgraded to a fast-track into the pending queue: still faster than a
+# cold FR-ORG-003 submission, but a Platform Admin always makes the actual
+# verified/not-verified call via review_organization_verification.
 # ---------------------------------------------------------------------------
 
 
-class TestDomainAutoVerification:
-    def test_TC_ORG_002a_matching_recognized_domain_auto_verifies(self, verified_account, settings):
+class TestDomainFastTrack:
+    def test_TC_ORG_002a_matching_recognized_domain_fast_tracks_to_pending(self, verified_account, settings):
         settings.RECOGNIZED_INSTITUTIONAL_DOMAINS = ["aau.edu.et"]
         verified_account.email = "student@aau.edu.et"
         verified_account.save(update_fields=["email"])
@@ -121,11 +130,54 @@ class TestDomainAutoVerification:
             primary_email_domain="aau.edu.et",
         )
 
+        # Fast-tracked, not verified -- a domain match alone never grants
+        # verified status. An admin still has to approve it.
+        assert organization.verification_status == "pending"
+        assert organization.domain_fast_tracked is True
+        assert organization.verified_at is None
+        assert AuditLogEntry.objects.filter(
+            action="organization.domain_matched_fast_tracked", target_id=str(organization.id),
+        ).exists()
+
+    def test_domain_fast_tracked_org_still_requires_admin_approval_to_verify(
+        self, verified_account, platform_admin, settings
+    ):
+        settings.RECOGNIZED_INSTITUTIONAL_DOMAINS = ["aau.edu.et"]
+        verified_account.email = "student@aau.edu.et"
+        verified_account.save(update_fields=["email"])
+
+        organization = services.register_organization(
+            actor=verified_account, name="AAU", type="university", contact_email="c@aau.edu.et",
+            primary_email_domain="aau.edu.et",
+        )
+        assert organization.verification_status == "pending"
+
+        # A student holding the domain match cannot skip the human gate --
+        # the org sits in the pending queue until an admin acts on it.
+        assert organization in services.get_pending_verification_queue()
+
+        review = services.review_organization_verification(
+            admin=platform_admin, organization_id=organization.id, decision="approved",
+        )
+        organization.refresh_from_db()
+        assert review.decision == "approved"
         assert organization.verification_status == "verified"
         assert organization.verified_at is not None
-        assert AuditLogEntry.objects.filter(
-            action="organization.domain_verified", target_id=str(organization.id),
-        ).exists()
+
+    def test_domain_fast_tracked_orgs_sort_first_in_pending_queue(self, verified_account, settings):
+        settings.RECOGNIZED_INSTITUTIONAL_DOMAINS = ["aau.edu.et"]
+
+        cold_org = OrganizationFactory(verification_status="pending", domain_fast_tracked=False)
+
+        verified_account.email = "student@aau.edu.et"
+        verified_account.save(update_fields=["email"])
+        fast_tracked_org = services.register_organization(
+            actor=verified_account, name="AAU", type="university", contact_email="c@aau.edu.et",
+            primary_email_domain="aau.edu.et",
+        )
+
+        queue = list(services.get_pending_verification_queue())
+        assert queue.index(fast_tracked_org) < queue.index(cold_org)
 
     def test_no_declared_domain_stays_unverified(self, verified_account, settings):
         settings.RECOGNIZED_INSTITUTIONAL_DOMAINS = ["aau.edu.et"]

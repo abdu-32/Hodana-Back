@@ -45,27 +45,31 @@ def _email_domain(email):
     return email.strip().lower().rsplit("@", 1)[-1]
 
 
+def _calculate_age(date_of_birth, *, as_of):
+    return as_of.year - date_of_birth.year - (
+        (as_of.month, as_of.day) < (date_of_birth.month, date_of_birth.day)
+    )
+
+
 def _check_eligibility(*, hackathon, actor):
     """FR-HACK-003 / FR-REG-001: reject with a specific, named-rule error
     rather than a generic rejection.
 
-    Only `institution_restriction` is checkable against the current data
-    model: Account has no FK to Organization, only a free-text
-    `university` field, so this matches on email domain against the
+    `institution_restriction` matches on email domain against the
     restricted orgs' `primary_email_domain` -- the same mechanism
-    organizations/services.py._attempt_domain_verification already uses
-    to link an account to an organization. An org in the restriction list
+    organizations/services.py._attempt_domain_fast_track already uses to
+    link an account to an organization. An org in the restriction list
     with no declared primary_email_domain can never be matched this way;
     that's a data-entry gap for the Organizer to fix, not something this
     function can work around.
 
-    `age_restriction` and `geographic_restriction` (also named in
-    FR-HACK-003) are NOT enforced here: Account has no date_of_birth or
-    country/location field anywhere in Doc 05. Silently treating them as
-    "not present" would misrepresent enforcement as complete when it
-    isn't -- flagging as a known gap rather than guessing at a data
-    source that doesn't exist. Add the fields + this check together when
-    that's prioritized.
+    `age_restriction` (`{"min_age": int|null, "max_age": int|null}`) and
+    `geographic_restriction` (`{"allowed_countries": ["ET", ...]}`) are
+    checked against Account.date_of_birth/country -- both self-reported
+    via FR-PROFILE-001, same trust level as `university`. A restricted
+    hackathon blocks registration outright (with a distinct error) if the
+    actor hasn't filled in the relevant profile field yet, rather than
+    silently treating "unknown" as "eligible".
     """
     rules = hackathon.eligibility_rules or {}
 
@@ -82,6 +86,46 @@ def _check_eligibility(*, hackathon, actor):
                 "eligibility": {
                     "rule": "institution_restriction",
                     "message": "Your institution is not on the allowed list for this hackathon.",
+                }
+            })
+
+    age_restriction = rules.get("age_restriction") or {}
+    min_age = age_restriction.get("min_age")
+    max_age = age_restriction.get("max_age")
+    if min_age is not None or max_age is not None:
+        if not actor.date_of_birth:
+            raise ValidationError({
+                "eligibility": {
+                    "rule": "age_restriction",
+                    "message": "This hackathon has an age restriction. Add your date of birth to "
+                               "your profile to register.",
+                }
+            })
+        age = _calculate_age(actor.date_of_birth, as_of=timezone.now().date())
+        if (min_age is not None and age < min_age) or (max_age is not None and age > max_age):
+            raise ValidationError({
+                "eligibility": {
+                    "rule": "age_restriction",
+                    "message": "You do not meet this hackathon's age requirement.",
+                }
+            })
+
+    geographic_restriction = rules.get("geographic_restriction") or {}
+    allowed_countries = geographic_restriction.get("allowed_countries")
+    if allowed_countries:
+        if not actor.country:
+            raise ValidationError({
+                "eligibility": {
+                    "rule": "geographic_restriction",
+                    "message": "This hackathon is restricted by country. Add your country to your "
+                               "profile to register.",
+                }
+            })
+        if actor.country.strip().upper() not in {c.strip().upper() for c in allowed_countries}:
+            raise ValidationError({
+                "eligibility": {
+                    "rule": "geographic_restriction",
+                    "message": "This hackathon is not open to participants in your country.",
                 }
             })
 

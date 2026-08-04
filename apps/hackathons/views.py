@@ -3,7 +3,7 @@ HTTP concerns only: routing to a service call, permission checks, and
 response status codes. No business logic here (Design Spec Sec 3.1).
 """
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -133,7 +133,27 @@ class HackathonSubmissionScreeningView(APIView):
     actions per row are PUT /submissions/{id}/eligibility, owned by
     apps.submissions per its own URL prefix -- see that app's views.py."""
 
-    @extend_schema(responses={200: serializers.PaginatedScreeningSubmissionsSerializer})
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="eligibilityStatus", type=str, location=OpenApiParameter.QUERY, required=False,
+                description=f"Filter by current screening status. One of: {', '.join(services.ELIGIBILITY_STATUS_CHOICES)}.",
+            ),
+            OpenApiParameter(
+                name="trackId", type=str, location=OpenApiParameter.QUERY, required=False,
+                description="Filter to submissions opted into this ChallengeTrack. Must belong to the same hackathon.",
+            ),
+            OpenApiParameter(
+                name="limit", type=int, location=OpenApiParameter.QUERY, required=False,
+                description="Page size, 1-100. Default 20.",
+            ),
+            OpenApiParameter(
+                name="offset", type=int, location=OpenApiParameter.QUERY, required=False,
+                description="Pagination offset. Default 0.",
+            ),
+        ],
+        responses={200: serializers.PaginatedScreeningSubmissionsSerializer},
+    )
     def get(self, request, id):
         limit, offset = _pagination_params(request)
         results, total = services.list_submissions_for_screening(
