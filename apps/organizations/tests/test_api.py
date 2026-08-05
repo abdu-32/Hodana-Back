@@ -154,6 +154,20 @@ class TestVerificationDocumentsEndpoint:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    @pytest.mark.parametrize("bad_url", [
+        "http://storage.example.com/a.pdf",  # not https
+        "javascript:alert(1)",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://localhost/a.pdf",
+    ])
+    def test_unsafe_file_url_returns_400(
+        self, api_client, verified_account, organization, organizer_role, auth_headers, bad_url,
+    ):
+        response = api_client.post(
+            self.url_for(organization), {"fileUrls": [bad_url]}, format="json", **auth_headers(verified_account),
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
 
 # ---------------------------------------------------------------------------
 # POST /organizations/{id}/verification-review -- FR-ORG-003

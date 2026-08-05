@@ -97,6 +97,27 @@ class TestSignupEndpoint:
         assert "already" not in message
         assert "exist" not in message
 
+    def test_ip_throttle_returns_429_once_exceeded(self, api_client, monkeypatch):
+        """Same rationale as the login endpoint's version of this test --
+        caps scripted mass account creation from one source."""
+        from rest_framework.throttling import ScopedRateThrottle
+        monkeypatch.setitem(ScopedRateThrottle.THROTTLE_RATES, "signup", "2/min")
+
+        for i in range(2):
+            response = api_client.post(
+                self.url,
+                {"email": f"throttle-test-{i}@example.com", "password": "correct-horse-99"},
+                format="json",
+            )
+            assert response.status_code == status.HTTP_201_CREATED
+
+        response = api_client.post(
+            self.url,
+            {"email": "throttle-test-overflow@example.com", "password": "correct-horse-99"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+
 
 # ---------------------------------------------------------------------------
 # POST /auth/login -- FR-AUTH-002
@@ -130,6 +151,31 @@ class TestLoginEndpoint:
             self.url, {"email": unverified_account.email, "password": raw_password}, format="json"
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_ip_throttle_returns_429_once_exceeded(self, api_client, verified_account, raw_password, monkeypatch):
+        """IP-based throttling (config/settings/base.py's `login` scope) is
+        separate from and in addition to the per-account lockout tested
+        below -- this caps request volume from one source regardless of
+        which account(s) it's aimed at. Overriding the rate to something
+        tiny keeps this deterministic and fast rather than looping 30+
+        times against the real configured limit. THROTTLE_RATES is the
+        actual dict object DRF reads at request time (SimpleRateThrottle
+        binds it once from api_settings.DEFAULT_THROTTLE_RATES), so
+        mutating it in place here takes effect immediately and
+        monkeypatch restores the original value automatically afterward."""
+        from rest_framework.throttling import ScopedRateThrottle
+        monkeypatch.setitem(ScopedRateThrottle.THROTTLE_RATES, "login", "2/min")
+
+        for _ in range(2):
+            response = api_client.post(
+                self.url, {"email": verified_account.email, "password": raw_password}, format="json"
+            )
+            assert response.status_code == status.HTTP_200_OK
+
+        response = api_client.post(
+            self.url, {"email": verified_account.email, "password": raw_password}, format="json"
+        )
+        assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
 
     def test_TC_AUTH_002a_account_locks_after_five_failed_attempts(self, api_client, verified_account, raw_password):
         for _ in range(services.LOCKOUT_THRESHOLD):
@@ -305,6 +351,29 @@ class TestCurrentUserEndpoint:
             self.url, {"bio": "x" * 501}, format="json", **auth_headers(verified_account)
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @pytest.mark.parametrize("field", ["avatarUrl", "portfolioUrl"])
+    @pytest.mark.parametrize("bad_url", [
+        "http://example.com/avatar.png",  # not https
+        "javascript:alert(1)",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://localhost/avatar.png",
+    ])
+    def test_avatar_and_portfolio_url_reject_unsafe_urls(self, api_client, verified_account, auth_headers, field, bad_url):
+        response = api_client.put(
+            self.url, {field: bad_url}, format="json", **auth_headers(verified_account)
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @pytest.mark.parametrize("field", ["avatarUrl", "portfolioUrl"])
+    def test_avatar_and_portfolio_url_accept_valid_https_url(self, api_client, verified_account, auth_headers, field):
+        response = api_client.put(
+            self.url,
+            {field: "https://storage.example.com/me/avatar.png"},
+            format="json",
+            **auth_headers(verified_account),
+        )
+        assert response.status_code == status.HTTP_200_OK
 
     def test_TC_NFR_SEC_005_revoked_session_rejected_even_with_unexpired_access_token(
         self, api_client, verified_account, auth_headers

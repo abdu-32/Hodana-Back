@@ -158,6 +158,19 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_THROTTLE_RATES": {
         "email_verification_resend": "1/5min",
+        # IP-scoped (DRF falls back to request IP when there's no
+        # authenticated user, which is always true for these endpoints).
+        # Complements, doesn't replace, the per-account lockout in
+        # accounts/services.py -- that stops repeated guesses against one
+        # account; this stops a spray across many accounts, or scripted
+        # mass signups, from one source. Rates are deliberately generous
+        # enough not to lock out a shared campus/office NAT doing normal
+        # traffic, while still capping automated abuse at a small multiple
+        # of that instead of "unlimited".
+        "login": "30/min",
+        "signup": "10/hour",
+        "oauth_login": "20/min",
+        "password_reset_request": "10/hour",
     },
     "EXCEPTION_HANDLER": "apps.core.exceptions.api_exception_handler",
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
@@ -237,6 +250,14 @@ CELERY_BEAT_SCHEDULE = {
 
 CACHES = {
     "default": {
+        # LocMemCache here is fine for local dev/tests (typically a single
+        # process). Production overrides this to a shared Redis backend --
+        # see config/settings/production.py for why: DRF's ScopedRateThrottle
+        # (used by the login/signup/etc. throttles below) stores its request
+        # counters in this cache, and a per-process cache would let each
+        # gunicorn/uvicorn worker enforce "the rate" independently,
+        # silently multiplying every throttle limit by however many
+        # workers are running.
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
 }

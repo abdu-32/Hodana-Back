@@ -12,6 +12,8 @@ into services.py without any extra translation step.
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 
+from apps.core.validators import validate_public_https_url
+
 from .models import Badge
 
 # --------------------------------------------------------------------------
@@ -134,8 +136,14 @@ class UserUpdateSerializer(serializers.Serializer):
         child=serializers.CharField(max_length=100, allow_blank=False),
         required=False,
     )
-    avatarUrl = serializers.CharField(source="avatar_url", required=False, allow_blank=True)
-    portfolioUrl = serializers.URLField(source="portfolio_url", required=False, allow_blank=True)
+    avatarUrl = serializers.URLField(
+        source="avatar_url", required=False, allow_blank=True, max_length=2048,
+        validators=[validate_public_https_url],
+    )
+    portfolioUrl = serializers.URLField(
+        source="portfolio_url", required=False, allow_blank=True, max_length=2048,
+        validators=[validate_public_https_url],
+    )
     contactEmail = serializers.EmailField(source="contact_email", required=False, allow_null=True)
     dateOfBirth = serializers.DateField(source="date_of_birth", required=False, allow_null=True)
     country = serializers.CharField(required=False, allow_null=True, allow_blank=True, max_length=2)

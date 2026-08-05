@@ -9,6 +9,8 @@ the convention established in accounts/serializers.py.
 
 from rest_framework import serializers
 
+from apps.core.validators import validate_public_https_url
+
 from .models import OrgVerificationDocument, OrgVerificationReview, Organization
 from .services import MAX_VERIFICATION_DOCUMENTS
 
@@ -73,11 +75,18 @@ class SubmitVerificationDocumentsSerializer(serializers.Serializer):
     """POST /organizations/{id}/verification-documents -- FR-ORG-003.
     Not yet in Doc 04; add it there. `fileUrls` are object-storage pointers
     already uploaded direct-to-storage (Design Spec Sec 6.3/ADR-005), not
-    raw file bytes -- this endpoint just records them."""
+    raw file bytes -- this endpoint just records them. Each URL is
+    validated as a well-formed https:// link to a non-internal host
+    (apps.core.validators.validate_public_https_url) -- these become
+    verification evidence a Platform Admin clicks through, so an
+    unvalidated free-text string here was a real gap, not just a nicety.
+    That check does NOT verify the URL actually resolves to a file, its
+    size, or its content type -- see that validator's module docstring
+    for why (nothing here receives the underlying bytes)."""
 
     fileUrls = serializers.ListField(
         source="file_urls",
-        child=serializers.CharField(),
+        child=serializers.URLField(max_length=2048, validators=[validate_public_https_url]),
         min_length=1,
         max_length=MAX_VERIFICATION_DOCUMENTS,
     )

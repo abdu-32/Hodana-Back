@@ -24,6 +24,8 @@ class SignupView(APIView):
     """POST /auth/signup -- FR-AUTH-001."""
 
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "signup"
 
     @extend_schema(
         request=serializers.SignupSerializer,
@@ -52,6 +54,8 @@ class LoginView(APIView):
     """POST /auth/login -- FR-AUTH-002."""
 
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
 
     @extend_schema(
         request=serializers.LoginSerializer,
@@ -73,6 +77,8 @@ class OAuthLoginView(APIView):
     at the URL resolver rather than reaching the service layer at all."""
 
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "oauth_login"
 
     @extend_schema(
         request=serializers.OAuthLoginSerializer,
@@ -156,6 +162,8 @@ class PasswordResetRequestView(APIView):
     """POST /auth/password-reset -- FR-AUTH-004. Not yet in Doc 04; add it."""
 
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset_request"
 
 
     @extend_schema(
