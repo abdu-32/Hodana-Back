@@ -11,3 +11,5 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
 
 # Local dev default is SQLite unless DATABASE_URL is set (docker-compose sets it).
 # See docker-compose.yml — the `db` service provides Postgres.
+
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
