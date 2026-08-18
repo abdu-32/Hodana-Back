@@ -238,9 +238,13 @@ class TestDeleteHackathon:
         services.delete_hackathon(actor=organizer_account, hackathon_id=hackathon.id)
         assert not Hackathon.objects.filter(id=hackathon.id).exists()
 
-    def test_cannot_delete_published_hackathon(self, published_hackathon, organizer_account, organizer_role):
-        with pytest.raises(ValidationError):
-            services.delete_hackathon(actor=organizer_account, hackathon_id=published_hackathon.id)
+    def test_organizer_can_delete_published_hackathon(self, published_hackathon, organizer_account, organizer_role):
+        services.delete_hackathon(actor=organizer_account, hackathon_id=published_hackathon.id)
+        assert not Hackathon.objects.filter(id=published_hackathon.id).exists()
+
+    def test_creator_can_delete_hackathon(self, hackathon):
+        services.delete_hackathon(actor=hackathon.created_by, hackathon_id=hackathon.id)
+        assert not Hackathon.objects.filter(id=hackathon.id).exists()
 
     def test_non_organizer_is_forbidden(self, hackathon, other_account):
         with pytest.raises(PermissionDenied):

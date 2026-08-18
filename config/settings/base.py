@@ -184,7 +184,7 @@ REST_FRAMEWORK = {
 # --------------------------------------------------------------------------
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Ethiopia Innovation Hub API",
+    "TITLE": "HODANA API",
     "DESCRIPTION": "Hackathon and innovation-challenge platform API.",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
@@ -285,6 +285,12 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@innovationhub.local")
+EMAIL_HOST = env("EMAIL_HOST", default="")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
+EMAIL_USE_TLS = False if EMAIL_USE_SSL else env.bool("EMAIL_USE_TLS", default=False)
 
 # --------------------------------------------------------------------------
 # FR-AUTH-005 -- OAuth sign-in (GitHub, Google). Client secrets are

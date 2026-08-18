@@ -341,18 +341,16 @@ def _registration_count(hackathon):
 # ---- DELETE /hackathons/{id} ------------------------------------------------
 
 def delete_hackathon(*, actor, hackathon_id):
-    """DELETE /hackathons/{id}. Not tied to a specific FR acceptance
-    criterion in Doc 02 (FR-HACK-005 only defines unpublish/archive as
-    lifecycle end-states for a *published* hackathon); restricting hard
-    delete to `draft` hackathons so a real event's data can never be
-    destroyed outright, only archived -- consistent with FR-HACK-005's own
-    "preserving all underlying data" language for suspension.
+    """DELETE /hackathons/{id}. Allows the creator, host organization Organizer,
+    or platform admin to delete the hackathon and its associated records.
     """
     hackathon = _get_hackathon_or_404(hackathon_id)
-    if not _is_organizer_of_org(actor=actor, org_id=hackathon.host_org_id):
-        raise PermissionDenied("Only an Organizer of the host organization can delete this hackathon.")
-    if hackathon.status != "draft":
-        raise ValidationError("Only a draft hackathon can be deleted; archive it instead.")
+    is_creator = getattr(actor, "id", None) and hackathon.created_by_id == actor.id
+    is_org_organizer = _is_organizer_of_org(actor=actor, org_id=hackathon.host_org_id)
+    is_admin = bool(getattr(actor, "is_platform_admin", False))
+
+    if not (is_creator or is_org_organizer or is_admin):
+        raise PermissionDenied("Only the creator or an Organizer of the host organization can delete this hackathon.")
 
     with transaction.atomic():
         hackathon_id_str = str(hackathon.id)

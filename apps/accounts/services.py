@@ -13,6 +13,7 @@ accounts -- services
 """
 
 import re
+import urllib.parse
 from datetime import timedelta
 
 from django.conf import settings
@@ -55,15 +56,23 @@ GENERIC_AUTH_ERROR = "Invalid email or password."
 GENERIC_RESET_MESSAGE = "If an account exists for this email, a password reset link has been sent."
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 def _send_mail(*, subject, message, to):
     """Single seam to swap for a Celery task later. Synchronous for now."""
-    send_mail(
-        subject=subject,
-        message=message,
-        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-        recipient_list=[to],
-        fail_silently=False,
-    )
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            recipient_list=[to],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        logger.error("Failed to send email to %s: %s", to, exc)
 
 
 def _validate_password_strength(password, account=None):
@@ -131,7 +140,8 @@ def _make_verification_token(account):
 
 def send_verification_email(account):
     token = _make_verification_token(account)
-    verify_url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+    encoded_token = urllib.parse.quote(token)
+    verify_url = f"{settings.FRONTEND_URL.rstrip('/')}/en/verify-email?token={encoded_token}"
     _send_mail(
         subject="Verify your Innovation Hub account",
         message=f"Confirm your email address to activate your account:\n\n{verify_url}",
@@ -237,7 +247,8 @@ def request_password_reset(*, email):
         return GENERIC_RESET_MESSAGE
 
     token = _make_reset_token(account)
-    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+    encoded_token = urllib.parse.quote(token)
+    reset_url = f"{settings.FRONTEND_URL.rstrip('/')}/en/reset-password?token={encoded_token}"
     _send_mail(
         subject="Reset your Innovation Hub password",
         message=f"Reset your password using this link (valid 1 hour):\n\n{reset_url}",
