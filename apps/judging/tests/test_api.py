@@ -883,3 +883,150 @@ class TestScoreReopenEndpoint:
             **auth_headers(organizer_account),
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+# ---------------------------------------------------------------------------
+# Judge Invitation & Dashboard Extended Endpoints
+# ---------------------------------------------------------------------------
+
+
+class TestJudgeInvitationLifecycleEndpoints:
+    def test_invitation_detail_endpoint(self, api_client, hackathon):
+        round = JudgingRoundFactory(hackathon=hackathon)
+        invitation = JudgeInvitationFactory(round=round, email="expert@example.com", status="sent")
+
+        response = api_client.get(f"/api/v1/judging/judge/invitations/{invitation.id}")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["email"] == "expert@example.com"
+        assert data["hackathonTitle"] == hackathon.title
+        assert data["status"] == "sent"
+
+    def test_decline_invitation_endpoint(self, api_client, auth_headers, hackathon):
+        round = JudgingRoundFactory(hackathon=hackathon)
+        judge = AccountFactory(email="decline.judge@example.com")
+        invitation = JudgeInvitationFactory(round=round, email=judge.email, status="sent")
+
+        response = api_client.post(
+            f"/api/v1/judging/judge/invitations/{invitation.id}/decline",
+            **auth_headers(judge),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] == "declined"
+
+    def test_revoke_invitation_endpoint(self, api_client, auth_headers, organizer_account, organizer_role, hackathon):
+        round = JudgingRoundFactory(hackathon=hackathon)
+        invitation = JudgeInvitationFactory(round=round, email="revoke.judge@example.com", status="sent")
+
+        response = api_client.post(
+            f"/api/v1/judging/judge/invitations/{invitation.id}/revoke",
+            **auth_headers(organizer_account),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] == "revoked"
+
+    def test_non_organizer_cannot_revoke(self, api_client, auth_headers, hackathon):
+        round = JudgingRoundFactory(hackathon=hackathon)
+        invitation = JudgeInvitationFactory(round=round, email="revoke.judge@example.com", status="sent")
+        outsider = AccountFactory()
+
+        response = api_client.post(
+            f"/api/v1/judging/judge/invitations/{invitation.id}/revoke",
+            **auth_headers(outsider),
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_organizer_sees_own_judges_and_not_other_organizers(self, api_client, auth_headers, organizer_account, organizer_role, hackathon):
+        round = JudgingRoundFactory(hackathon=hackathon)
+        invitation = JudgeInvitationFactory(round=round, email="organizer.judge@example.com", status="sent")
+
+        # Another organizer's hackathon and judge
+        other_round = JudgingRoundFactory()
+        JudgeInvitationFactory(round=other_round, email="stranger.judge@example.com", status="sent")
+
+        response = api_client.get("/api/v1/judging/organizer/judges", **auth_headers(organizer_account))
+        assert response.status_code == status.HTTP_200_OK
+        judges = response.json()
+        assert len(judges) == 1
+        assert judges[0]["email"] == "organizer.judge@example.com"
+        assert judges[0]["hackathonId"] == str(hackathon.id)
+
+
+class TestJudgeAssignedHackathonsAndSubmissionsEndpoints:
+    def test_unassigned_judge_sees_empty_hackathons(self, api_client, auth_headers):
+        stranger = AccountFactory()
+        response = api_client.get("/api/v1/judging/assigned-hackathons", **auth_headers(stranger))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    def test_assigned_judge_sees_only_assigned_hackathons(self, api_client, auth_headers, hackathon):
+        round = JudgingRoundFactory(hackathon=hackathon)
+        judge = AccountFactory(email="assigned.judge@example.com")
+        JudgeInvitationFactory(round=round, email=judge.email, status="accepted")
+        RoleAssignment.objects.create(
+            user=judge, role="judge", scope_type="hackathon", scope_id=hackathon.id,
+        )
+
+        other_hackathon = JudgingRoundFactory().hackathon
+
+        response = api_client.get("/api/v1/judging/assigned-hackathons", **auth_headers(judge))
+        assert response.status_code == status.HTTP_200_OK
+        hackathons = response.json()
+        assert len(hackathons) == 1
+        assert hackathons[0]["id"] == str(hackathon.id)
+        assert hackathons[0]["title"] == hackathon.title
+
+    def test_judge_cannot_access_unassigned_hackathon_submissions(self, api_client, auth_headers, hackathon):
+        unassigned_judge = AccountFactory()
+        response = api_client.get(
+            f"/api/v1/judging/hackathons/{hackathon.id}/submissions",
+            **auth_headers(unassigned_judge),
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_assigned_judge_sees_hackathon_submissions_and_can_evaluate(self, api_client, auth_headers, hackathon):
+        round = JudgingRoundFactory(hackathon=hackathon, status="open")
+        criterion = JudgingCriterionFactory(round=round, min_score=0, max_score=10, weight=100)
+        judge = AccountFactory(email="panel.judge@example.com")
+        JudgeInvitationFactory(round=round, email=judge.email, status="accepted")
+        RoleAssignment.objects.create(
+            user=judge, role="judge", scope_type="hackathon", scope_id=hackathon.id,
+        )
+        submission = _eligible_submission(hackathon)
+
+        # 1. Get submissions
+        response = api_client.get(
+            f"/api/v1/judging/hackathons/{hackathon.id}/submissions",
+            **auth_headers(judge),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        subs = response.json()
+        assert len(subs) == 1
+        assert subs[0]["id"] == str(submission.id)
+        assert subs[0]["projectTitle"] == submission.title
+        assert subs[0]["evaluationStatus"] == "NOT_STARTED"
+
+        # 2. Evaluate submission
+        eval_resp = api_client.post(
+            f"/api/v1/judging/submissions/{submission.id}/evaluate",
+            {
+                "hackathonId": str(hackathon.id),
+                "criteriaScores": {criterion.name.lower(): 9.5},
+                "feedback": "Outstanding prototype and implementation!",
+                "status": "final",
+            },
+            format="json",
+            **auth_headers(judge),
+        )
+        assert eval_resp.status_code == status.HTTP_200_OK
+        eval_body = eval_resp.json()
+        assert eval_body["status"] == "SUBMITTED"
+        assert eval_body["feedback"] == "Outstanding prototype and implementation!"
+
+        # 3. Verify submission status is now COMPLETED
+        updated_subs = api_client.get(
+            f"/api/v1/judging/hackathons/{hackathon.id}/submissions",
+            **auth_headers(judge),
+        ).json()
+        assert updated_subs[0]["evaluationStatus"] == "COMPLETED"
+        assert updated_subs[0]["myEvaluation"]["feedback"] == "Outstanding prototype and implementation!"

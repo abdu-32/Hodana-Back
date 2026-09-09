@@ -120,3 +120,23 @@ class TestDemographicBreakdownEndpoint:
             f"/api/v1/analytics/hackathons/{uuid.uuid4()}/demographics", **auth_headers(organizer_account),
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/platform-stats
+# ---------------------------------------------------------------------------
+
+
+class TestPlatformStatsEndpoint:
+    url = "/api/v1/analytics/platform-stats"
+
+    def test_public_access_returns_200_with_metrics(self, api_client):
+        response = api_client.get(self.url)
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert "activeDevelopers" in body
+        assert "totalRegistrations" in body
+        assert "totalHackathons" in body
+        assert "totalPrizeVolumeETB" in body
+        assert "totalProjects" in body
+

@@ -61,18 +61,23 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+import threading
+
 def _send_mail(*, subject, message, to):
-    """Single seam to swap for a Celery task later. Synchronous for now."""
-    try:
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=[to],
-            fail_silently=False,
-        )
-    except Exception as exc:
-        logger.error("Failed to send email to %s: %s", to, exc)
+    """Sends email in a background daemon thread so network SMTP latency never blocks the HTTP response."""
+    def _deliver():
+        try:
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+                recipient_list=[to],
+                fail_silently=False,
+            )
+        except Exception as exc:
+            logger.error("Failed to send email to %s: %s", to, exc)
+
+    threading.Thread(target=_deliver, daemon=True).start()
 
 
 def _validate_password_strength(password, account=None):
@@ -164,7 +169,8 @@ def resend_verification_email(*, email):
 
 def verify_email(*, token):
     try:
-        payload = signing.loads(token, salt=EMAIL_VERIFICATION_SALT, max_age=EMAIL_VERIFICATION_MAX_AGE)
+        raw_token = urllib.parse.unquote(token)
+        payload = signing.loads(raw_token, salt=EMAIL_VERIFICATION_SALT, max_age=EMAIL_VERIFICATION_MAX_AGE)
     except signing.SignatureExpired:
         raise ValidationError({"token": "This verification link has expired."})
     except signing.BadSignature:
@@ -259,7 +265,8 @@ def request_password_reset(*, email):
 
 def reset_password(*, token, new_password):
     try:
-        payload = signing.loads(token, salt=PASSWORD_RESET_SALT, max_age=PASSWORD_RESET_MAX_AGE)
+        raw_token = urllib.parse.unquote(token)
+        payload = signing.loads(raw_token, salt=PASSWORD_RESET_SALT, max_age=PASSWORD_RESET_MAX_AGE)
     except signing.SignatureExpired:
         raise ValidationError({"token": "This reset link has expired."})
     except signing.BadSignature:
@@ -289,7 +296,12 @@ def reset_password(*, token, new_password):
 
 PROFILE_UPDATE_FIELDS = [
     "full_name", "bio", "university", "skills", "avatar_url", "portfolio_url",
-    "contact_email", "date_of_birth", "country",
+    "contact_email", "date_of_birth", "country", "phone_number", "city",
+    "organization", "department", "field_of_study", "profession",
+    "experience_level", "professional_title", "years_of_experience",
+    "linkedin_url", "github_url", "website_url", "twitter_url", "instagram_url",
+    "interested_in_teams", "looking_for_teammates", "team_seeking_description",
+    "preferred_team_roles", "profile_visibility",
 ]
 
 # FR-HACK-003's age_restriction is enforced against this in

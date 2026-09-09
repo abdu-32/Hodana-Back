@@ -36,10 +36,33 @@ class TestHackathonListCreateEndpoint:
             "registrationClosesAt": (now + timedelta(days=7)).isoformat(),
             "submissionOpensAt": (now + timedelta(days=7)).isoformat(),
             "submissionClosesAt": (now + timedelta(days=14)).isoformat(),
+            "totalPrizeBudget": "10000.00",
+            "prizeDistribution": {
+                "firstPlaceAmount": "5000.00",
+                "secondPlaceAmount": "3000.00",
+                "thirdPlaceAmount": "2000.00",
+            },
         }
         response = api_client.post(self.url, payload, format="json", **auth_headers(organizer_account))
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.json()["status"] == "draft"
+        body = response.json()
+        assert body["status"] == "draft"
+        assert body["totalPrizeBudget"] == "10000.00"
+        assert body["prizeDistribution"]["firstPlaceAmount"] == "5000.00"
+
+    def test_create_rejects_negative_budget(self, api_client, organizer_account, verified_org, organizer_role, auth_headers):
+        now = timezone.now()
+        payload = {
+            "title": "EthioHacks Negative",
+            "hostOrgId": str(verified_org.id),
+            "registrationOpensAt": now.isoformat(),
+            "registrationClosesAt": (now + timedelta(days=7)).isoformat(),
+            "submissionOpensAt": (now + timedelta(days=7)).isoformat(),
+            "submissionClosesAt": (now + timedelta(days=14)).isoformat(),
+            "totalPrizeBudget": "-500.00",
+        }
+        response = api_client.post(self.url, payload, format="json", **auth_headers(organizer_account))
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
 class TestHackathonDetailEndpoint:
@@ -55,13 +78,26 @@ class TestHackathonDetailEndpoint:
         response = api_client.put(f"/api/v1/hackathons/{hackathon.id}", {"title": "X"}, format="json")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_organizer_can_update(self, api_client, hackathon, organizer_account, organizer_role, auth_headers):
+    def test_organizer_can_update_and_set_budget(self, api_client, hackathon, organizer_account, organizer_role, auth_headers):
         response = api_client.put(
-            f"/api/v1/hackathons/{hackathon.id}", {"title": "Renamed"}, format="json",
+            f"/api/v1/hackathons/{hackathon.id}",
+            {
+                "title": "Renamed",
+                "totalPrizeBudget": "25000.00",
+                "prizeDistribution": {
+                    "firstPlaceAmount": "15000.00",
+                    "secondPlaceAmount": "7000.00",
+                    "thirdPlaceAmount": "3000.00",
+                },
+            },
+            format="json",
             **auth_headers(organizer_account),
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.json()["title"] == "Renamed"
+        data = response.json()
+        assert data["title"] == "Renamed"
+        assert data["totalPrizeBudget"] == "25000.00"
+        assert data["prizeDistribution"]["firstPlaceAmount"] == "15000.00"
 
 
 class TestChallengeTrackListCreateEndpoint:

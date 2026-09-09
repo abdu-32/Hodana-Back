@@ -254,3 +254,34 @@ def get_demographic_breakdown(*, actor, hackathon_id):
         "by_age_group": _bucket_with_privacy_floor(age_counts),
         "by_country": _bucket_with_privacy_floor(country_counts),
     }
+
+
+def get_platform_stats():
+    """Computes real-time platform metrics from PostgreSQL for public hero and landing pages."""
+    from django.db.models import Sum
+    from apps.accounts.models import Account
+    from apps.hackathons.models import Hackathon
+    from apps.registrations.models import Registration
+    from apps.submissions.models import Submission
+
+    active_developers = Account.objects.filter(
+        deleted_at__isnull=True,
+        is_suspended=False,
+        is_platform_admin=False,
+    ).count()
+
+    total_registrations = Registration.objects.filter(withdrawn_at__isnull=True).count()
+    total_hackathons = Hackathon.objects.filter(status="published").count()
+    prize_sum = (
+        Hackathon.objects.filter(status="published").aggregate(total=Sum("total_prize_budget"))["total"]
+        or 0
+    )
+    total_projects = Submission.objects.count()
+
+    return {
+        "active_developers": active_developers,
+        "total_registrations": total_registrations,
+        "total_hackathons": total_hackathons,
+        "total_prize_volume_etb": float(prize_sum),
+        "total_projects": total_projects,
+    }

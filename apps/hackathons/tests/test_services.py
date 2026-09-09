@@ -44,11 +44,39 @@ def _timeline(**overrides):
 class TestCreateHackathon:
     def test_creates_draft_hackathon(self, organizer_account, verified_org, organizer_role):
         hackathon = services.create_hackathon(
-            actor=organizer_account, host_org_id=verified_org.id, title="AAU Hack", **_timeline(),
+            actor=organizer_account, host_org_id=verified_org.id, title="AAU Hack",
+            total_prize_budget="15000.00",
+            prize_distribution={
+                "firstPlaceAmount": "8000.00",
+                "secondPlaceAmount": "4000.00",
+                "thirdPlaceAmount": "3000.00",
+            },
+            **_timeline(),
         )
         assert hackathon.status == "draft"
         assert hackathon.host_org_id == verified_org.id
         assert hackathon.slug
+        assert str(hackathon.total_prize_budget) == "15000.00"
+        assert hackathon.prize_distribution["firstPlaceAmount"] == "8000.00"
+
+    def test_create_rejects_negative_budget(self, organizer_account, verified_org, organizer_role):
+        with pytest.raises(ValidationError):
+            services.create_hackathon(
+                actor=organizer_account, host_org_id=verified_org.id, title="AAU Hack Negative",
+                total_prize_budget="-1000.00", **_timeline(),
+            )
+
+    def test_create_rejects_distribution_exceeding_budget(self, organizer_account, verified_org, organizer_role):
+        with pytest.raises(ValidationError):
+            services.create_hackathon(
+                actor=organizer_account, host_org_id=verified_org.id, title="AAU Hack Overflow",
+                total_prize_budget="5000.00",
+                prize_distribution={
+                    "firstPlaceAmount": "4000.00",
+                    "secondPlaceAmount": "3000.00",
+                },
+                **_timeline(),
+            )
 
     def test_non_organizer_is_forbidden(self, organizer_account, verified_org):
         with pytest.raises(PermissionDenied):
@@ -188,6 +216,16 @@ class TestListHackathons:
         assert total == 5
         assert len(results) == 2
 
+    def test_managed_only_returns_drafts_for_organizer(self, verified_org, organizer_account, organizer_role):
+        draft = HackathonFactory(host_org=verified_org, created_by=organizer_account, status="draft")
+        published = PublishedHackathonFactory(host_org=verified_org, created_by=organizer_account)
+
+        results, total = services.list_hackathons(requester=organizer_account, managed_only=True)
+        ids = {h.id for h in results}
+        assert draft.id in ids
+        assert published.id in ids
+        assert total == 2
+
 
 # ---------------------------------------------------------------------------
 # FR-HACK-002/003/005: update + status transitions
@@ -200,6 +238,38 @@ class TestUpdateHackathon:
             actor=organizer_account, hackathon_id=hackathon.id, data={"title": "New Title"},
         )
         assert updated.title == "New Title"
+
+    def test_organizer_can_update_budget_and_distribution(self, hackathon, organizer_account, organizer_role):
+        updated = services.update_hackathon(
+            actor=organizer_account, hackathon_id=hackathon.id,
+            data={
+                "total_prize_budget": "20000.00",
+                "prize_distribution": {
+                    "firstPlaceAmount": "10000.00",
+                    "secondPlaceAmount": "6000.00",
+                    "thirdPlaceAmount": "4000.00",
+                },
+            },
+        )
+        assert str(updated.total_prize_budget) == "20000.00"
+        assert updated.prize_distribution["firstPlaceAmount"] == "10000.00"
+
+    def test_update_rejects_negative_budget(self, hackathon, organizer_account, organizer_role):
+        with pytest.raises(ValidationError):
+            services.update_hackathon(
+                actor=organizer_account, hackathon_id=hackathon.id,
+                data={"total_prize_budget": "-100.00"},
+            )
+
+    def test_update_rejects_distribution_exceeding_budget(self, hackathon, organizer_account, organizer_role):
+        with pytest.raises(ValidationError):
+            services.update_hackathon(
+                actor=organizer_account, hackathon_id=hackathon.id,
+                data={
+                    "total_prize_budget": "5000.00",
+                    "prize_distribution": {"firstPlaceAmount": "6000.00"},
+                },
+            )
 
     def test_non_organizer_is_forbidden(self, hackathon, other_account):
         with pytest.raises(PermissionDenied):

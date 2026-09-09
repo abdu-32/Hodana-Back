@@ -131,6 +131,9 @@ LANGUAGES = [
 TIME_ZONE = "Africa/Addis_Ababa"
 USE_I18N = True
 USE_TZ = True
+LOCALE_PATHS = [
+    BASE_DIR / "locale",
+]
 
 # --------------------------------------------------------------------------
 # Static / media

@@ -11,7 +11,11 @@ app_name = "hackathons"
 
 urlpatterns = [
     path("", views.HackathonListCreateView.as_view(), name="list-create"),
-    path("<uuid:id>", views.HackathonDetailView.as_view(), name="detail"),
-    path("<uuid:id>/tracks", views.ChallengeTrackListCreateView.as_view(), name="track-list-create"),
-    path("<uuid:id>/submissions", views.HackathonSubmissionScreeningView.as_view(), name="submission-screening"),
-]
+    path("export", views.HackathonExportView.as_view(), name="export-root"),
+    path("export/", views.HackathonExportView.as_view(), name="export-slash"),
+    path("<str:id>", views.HackathonDetailView.as_view(), name="detail"),
+    path("<str:id>/export", views.HackathonExportView.as_view(), name="detail-export"),
+    path("<str:id>/export/", views.HackathonExportView.as_view(), name="detail-export-slash"),
+    path("<str:id>/tracks", views.ChallengeTrackListCreateView.as_view(), name="track-list-create"),
+    path("<str:id>/submissions", views.HackathonSubmissionScreeningView.as_view(), name="submission-screening"),
+]

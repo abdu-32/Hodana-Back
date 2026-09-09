@@ -23,3 +23,8 @@ drf-spectacular>=0.27
 
 # OAuth sign-in (FR-AUTH-005) -- server-side code exchange with GitHub/Google
 requests>=2.31
+
+# Data export generation (Excel, PDF)
+openpyxl>=3.1.5
+reportlab>=4.2
+

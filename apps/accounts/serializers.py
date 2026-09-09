@@ -96,22 +96,108 @@ class UserProfileSerializer(serializers.Serializer):
     skills = serializers.ListField(child=serializers.CharField(), read_only=True)
     avatarUrl = serializers.CharField(source="avatar_url", read_only=True)
     portfolioUrl = serializers.CharField(source="portfolio_url", read_only=True)
+    contactEmail = serializers.EmailField(source="contact_email", read_only=True, allow_null=True)
     dateOfBirth = serializers.DateField(source="date_of_birth", read_only=True, allow_null=True)
     country = serializers.CharField(read_only=True, allow_null=True)
+    phoneNumber = serializers.CharField(source="phone_number", read_only=True)
+    city = serializers.CharField(read_only=True)
+    organization = serializers.CharField(read_only=True)
+    department = serializers.CharField(read_only=True)
+    fieldOfStudy = serializers.CharField(source="field_of_study", read_only=True)
+    role = serializers.SerializerMethodField()
+    profession = serializers.CharField(read_only=True)
+    experienceLevel = serializers.CharField(source="experience_level", read_only=True)
+    professionalTitle = serializers.CharField(source="professional_title", read_only=True)
+    yearsOfExperience = serializers.IntegerField(source="years_of_experience", read_only=True, allow_null=True)
+    linkedinUrl = serializers.CharField(source="linkedin_url", read_only=True)
+    githubUrl = serializers.CharField(source="github_url", read_only=True)
+    websiteUrl = serializers.CharField(source="website_url", read_only=True)
+    twitterUrl = serializers.CharField(source="twitter_url", read_only=True)
+    instagramUrl = serializers.CharField(source="instagram_url", read_only=True)
+    interestedInTeams = serializers.CharField(source="interested_in_teams", read_only=True)
+    lookingForTeammates = serializers.BooleanField(source="looking_for_teammates", read_only=True)
+    teamSeekingDescription = serializers.CharField(source="team_seeking_description", read_only=True)
+    preferredTeamRoles = serializers.ListField(child=serializers.CharField(), source="preferred_team_roles", read_only=True)
+    profileVisibility = serializers.CharField(source="profile_visibility", read_only=True)
     roles = serializers.SerializerMethodField()
+    organizerApplication = serializers.SerializerMethodField()
     verificationStatus = serializers.CharField(source="verification_status", read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
 
+    @extend_schema_field(serializers.CharField())
+    def get_role(self, account):
+        if getattr(account, "is_platform_admin", False):
+            return "admin"
+        from apps.organizations.models import Organization
+        verified_org_ids = Organization.objects.filter(
+            verification_status="verified", is_suspended=False
+        ).values_list("id", flat=True)
+        has_verified_organizer = account.role_assignments.filter(
+            role="organizer",
+            scope_type="organization",
+            scope_id__in=verified_org_ids,
+        ).exists()
+        if has_verified_organizer or getattr(account, "role", "") == "organizer":
+            return "organizer"
+        if account.role_assignments.filter(role="judge").exists() or getattr(account, "role", "") == "judge":
+            return "judge"
+        return getattr(account, "role", "participant") or "participant"
+
     @extend_schema_field(serializers.ListField(child=serializers.CharField()))
     def get_roles(self, account):
-        """Design Spec Sec 4.3: Participant is implicit (no RoleAssignment
-        row); Platform Admin is the global boolean flag; everything else
-        comes from RoleAssignment rows, deduplicated."""
         roles = {"participant"}
-        if account.is_platform_admin:
+        if getattr(account, "is_platform_admin", False):
             roles.add("admin")
-        roles.update(account.role_assignments.values_list("role", flat=True))
+            roles.add("organizer")
+
+        from apps.organizations.models import Organization
+        verified_org_ids = Organization.objects.filter(
+            verification_status="verified", is_suspended=False
+        ).values_list("id", flat=True)
+
+        has_verified_organizer_role = account.role_assignments.filter(
+            role="organizer",
+            scope_type="organization",
+            scope_id__in=verified_org_ids,
+        ).exists()
+
+        if has_verified_organizer_role:
+            roles.add("organizer")
+
+        other_roles = account.role_assignments.exclude(role="organizer").values_list("role", flat=True)
+        roles.update(other_roles)
         return sorted(roles)
+
+    @extend_schema_field(serializers.DictField(allow_null=True))
+    def get_organizerApplication(self, account):
+        from apps.organizations.models import Organization
+        # Check organizations created by account or where account has an organizer role assignment
+        org = Organization.objects.filter(created_by=account).order_by("-created_at").first()
+        if not org:
+            org_id = account.role_assignments.filter(
+                role="organizer", scope_type="organization"
+            ).values_list("scope_id", flat=True).first()
+            if org_id:
+                org = Organization.objects.filter(id=org_id).first()
+
+        if not org:
+            return None
+
+        latest_review = org.verification_reviews.order_by("-reviewed_at").first()
+
+        return {
+            "id": str(org.id),
+            "name": org.name,
+            "type": org.type,
+            "contactEmail": org.contact_email,
+            "primaryEmailDomain": org.primary_email_domain,
+            "verificationStatus": org.verification_status,
+            "domainFastTracked": org.domain_fast_tracked,
+            "isSuspended": org.is_suspended,
+            "verifiedAt": org.verified_at.isoformat() if org.verified_at else None,
+            "createdAt": org.created_at.isoformat() if org.created_at else None,
+            "rejectionReason": latest_review.rejection_reason if (latest_review and latest_review.decision == "rejected") else None,
+        }
 
 
 class AuthResponseSerializer(serializers.Serializer):
@@ -124,13 +210,13 @@ class AuthResponseSerializer(serializers.Serializer):
 
 
 class UserUpdateSerializer(serializers.Serializer):
-    """Doc 04 UserUpdateRequest, plus portfolioUrl (see module docstring).
+    """Doc 04 UserUpdateRequest, plus extended participant profile fields.
     `validated_data` comes out snake_case, matching
     services.PROFILE_UPDATE_FIELDS exactly, so a view can pass it straight
     through to services.update_profile(account=..., data=serializer.validated_data)."""
 
     fullName = serializers.CharField(source="full_name", max_length=255, required=False)
-    bio = serializers.CharField(max_length=500, required=False, allow_blank=True)  # FR-PROFILE-001
+    bio = serializers.CharField(max_length=500, required=False, allow_blank=True)
     university = serializers.CharField(max_length=255, required=False, allow_blank=True)
     skills = serializers.ListField(
         child=serializers.CharField(max_length=100, allow_blank=False),
@@ -147,10 +233,30 @@ class UserUpdateSerializer(serializers.Serializer):
     contactEmail = serializers.EmailField(source="contact_email", required=False, allow_null=True)
     dateOfBirth = serializers.DateField(source="date_of_birth", required=False, allow_null=True)
     country = serializers.CharField(required=False, allow_null=True, allow_blank=True, max_length=2)
+    phoneNumber = serializers.CharField(source="phone_number", required=False, allow_blank=True, max_length=30)
+    city = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    organization = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    department = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    fieldOfStudy = serializers.CharField(source="field_of_study", required=False, allow_blank=True, max_length=255)
+    role = serializers.CharField(source="profession", required=False, allow_blank=True, max_length=100)
+    profession = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    experienceLevel = serializers.CharField(source="experience_level", required=False, allow_blank=True, max_length=50)
+    professionalTitle = serializers.CharField(source="professional_title", required=False, allow_blank=True, max_length=255)
+    yearsOfExperience = serializers.IntegerField(source="years_of_experience", required=False, allow_null=True)
+    linkedinUrl = serializers.CharField(source="linkedin_url", required=False, allow_blank=True, max_length=2048)
+    githubUrl = serializers.CharField(source="github_url", required=False, allow_blank=True, max_length=2048)
+    websiteUrl = serializers.CharField(source="website_url", required=False, allow_blank=True, max_length=2048)
+    twitterUrl = serializers.CharField(source="twitter_url", required=False, allow_blank=True, max_length=2048)
+    instagramUrl = serializers.CharField(source="instagram_url", required=False, allow_blank=True, max_length=2048)
+    interestedInTeams = serializers.CharField(source="interested_in_teams", required=False, allow_blank=True, max_length=20)
+    lookingForTeammates = serializers.BooleanField(source="looking_for_teammates", required=False)
+    teamSeekingDescription = serializers.CharField(source="team_seeking_description", required=False, allow_blank=True)
+    preferredTeamRoles = serializers.ListField(child=serializers.CharField(max_length=100), source="preferred_team_roles", required=False)
+    profileVisibility = serializers.CharField(source="profile_visibility", required=False, max_length=10)
 
     def validate_skills(self, value):
-        if len(value) > 15:  # FR-PROFILE-001
-            raise serializers.ValidationError("You can list at most 15 skills.")
+        if len(value) > 30:
+            raise serializers.ValidationError("You can list at most 30 skills.")
         return value
 
 
@@ -162,7 +268,14 @@ class PublicProfileSerializer(serializers.Serializer):
     fullName = serializers.CharField(source="full_name", read_only=True)
     bio = serializers.CharField(read_only=True)
     university = serializers.CharField(read_only=True)
+    organization = serializers.CharField(read_only=True)
+    role = serializers.CharField(source="profession", read_only=True)
+    professionalTitle = serializers.CharField(source="professional_title", read_only=True)
+    experienceLevel = serializers.CharField(source="experience_level", read_only=True)
     skills = serializers.ListField(child=serializers.CharField(), read_only=True)
     avatarUrl = serializers.CharField(source="avatar_url", read_only=True)
     portfolioUrl = serializers.CharField(source="portfolio_url", read_only=True)
+    linkedinUrl = serializers.CharField(source="linkedin_url", read_only=True)
+    githubUrl = serializers.CharField(source="github_url", read_only=True)
+    websiteUrl = serializers.CharField(source="website_url", read_only=True)
     badges = BadgeSerializer(many=True, read_only=True)

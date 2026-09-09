@@ -28,6 +28,13 @@ VERIFICATION_STATUS_CHOICES = [
 ]
 
 
+REGISTRATION_TYPE_CHOICES = [
+    ("solo", "Solo"),
+    ("looking_for_team", "Looking for a Team"),
+    ("create_team", "Create a Team"),
+]
+
+
 class RegistrationManager(TenantScopedManager):
     scope_field = "hackathon"
 
@@ -50,6 +57,9 @@ class Registration(models.Model):
 
     eligibility_confirmed = models.BooleanField(default=False)
     custom_answers = models.JSONField(null=True, blank=True)
+    registration_type = models.CharField(
+        max_length=20, choices=REGISTRATION_TYPE_CHOICES, default="solo"
+    )
 
     # FR-HACK-003's institutional-verification flavor of eligibility;
     # meaningful only where hackathon.eligibility_rules requires it

@@ -11,14 +11,20 @@ app_name = "registrations"
 
 urlpatterns = [
     path(
-        "hackathons/<uuid:hackathon_id>",
+        "hackathons/<str:hackathon_id>",
         views.HackathonRegistrationView.as_view(),
         name="register",
     ),
     path(
-        "hackathons/<uuid:hackathon_id>/withdraw",
+        "hackathons/<str:hackathon_id>/withdraw",
         views.HackathonRegistrationWithdrawView.as_view(),
         name="withdraw",
     ),
+    path(
+        "hackathons/<str:hackathon_id>/type",
+        views.HackathonRegistrationTypeView.as_view(),
+        name="update-type",
+    ),
     path("me", views.MyRegistrationsView.as_view(), name="my-registrations"),
+    path("organizer", views.OrganizerRegistrationsView.as_view(), name="organizer-registrations"),
 ]

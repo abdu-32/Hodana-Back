@@ -41,6 +41,7 @@ class Team(models.Model):
         "hackathons.Hackathon", on_delete=models.CASCADE, related_name="teams",
     )  # tenant-scoping column, Design Spec Sec 3.3
     team_name = models.CharField(max_length=60)
+    description = models.TextField(blank=True, default="")
     leader_user = models.ForeignKey(
         "accounts.Account", on_delete=models.CASCADE, related_name="teams_led",
     )
@@ -131,3 +132,51 @@ class TeamMember(models.Model):
 
     def __str__(self):
         return f"{self.user_id} -> {self.team_id} ({self.join_status})"
+
+
+JOIN_REQUEST_STATUS_CHOICES = [
+    ("pending", "Pending"),
+    ("accepted", "Accepted"),
+    ("rejected", "Rejected"),
+    ("cancelled", "Cancelled"),
+]
+
+
+class TeamJoinRequestManager(TenantScopedManager):
+    scope_field = "hackathon"
+
+
+class TeamJoinRequest(models.Model):
+    """Models a participant requesting to join an open team in a hackathon."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name="join_requests")
+    hackathon = models.ForeignKey(
+        "hackathons.Hackathon", on_delete=models.CASCADE, related_name="team_join_requests",
+    )
+    user = models.ForeignKey(
+        "accounts.Account", on_delete=models.CASCADE, related_name="team_join_requests",
+    )
+    message = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=15, choices=JOIN_REQUEST_STATUS_CHOICES, default="pending")
+    created_at = models.DateTimeField(auto_now_add=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    objects = TeamJoinRequestManager()
+
+    class Meta:
+        app_label = "teams"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["team", "user"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_join_request_per_team_user",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["hackathon"]),
+            models.Index(fields=["user"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} -> join request to {self.team_id} ({self.status})"

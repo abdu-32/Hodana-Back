@@ -225,6 +225,13 @@ class CurrentUserView(APIView):
         account = services.update_profile(account=request.user, data=serializer.validated_data)
         return Response(serializers.UserProfileSerializer(account).data)
 
+    @extend_schema(
+        request=serializers.UserUpdateSerializer,
+        responses={200: serializers.UserProfileSerializer},
+    )
+    def patch(self, request):
+        return self.put(request)
+
 
 class UserPublicProfileView(APIView):
     """GET /users/{id} -- FR-PROFILE-002: "reachable without

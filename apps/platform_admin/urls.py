@@ -5,6 +5,7 @@ relative to that prefix.
 
 from django.urls import path
 
+from apps.organizations import views as org_views
 from . import views
 
 app_name = "platform_admin"
@@ -15,6 +16,58 @@ urlpatterns = [
         "organizations/pending",
         views.PendingOrganizationsView.as_view(),
         name="organizations-pending",
+    ),
+    path(
+        "organizations",
+        views.AdminOrganizationsView.as_view(),
+        name="organizations-list",
+    ),
+    path(
+        "organizations/<uuid:id>/verification-review",
+        org_views.OrganizationVerificationReviewView.as_view(),
+        name="organization-verification-review",
+    ),
+
+    # Live platform management & telemetry
+    path(
+        "health",
+        views.AdminHealthCheckView.as_view(),
+        name="health",
+    ),
+    path(
+        "hackathons",
+        views.AdminHackathonsListView.as_view(),
+        name="hackathons-list",
+    ),
+    path(
+        "users",
+        views.AdminUsersListView.as_view(),
+        name="users-list",
+    ),
+    path(
+        "metrics",
+        views.AdminMetricsView.as_view(),
+        name="metrics",
+    ),
+    path(
+        "audit-logs",
+        views.AdminAuditLogsView.as_view(),
+        name="audit-logs",
+    ),
+    path(
+        "financials",
+        views.AdminFinancialsListView.as_view(),
+        name="financials-list",
+    ),
+    path(
+        "financials/<uuid:id>/release",
+        views.AuthorizeEscrowReleaseView.as_view(),
+        name="financials-release",
+    ),
+    path(
+        "financials/<uuid:id>",
+        views.DeleteFinancialRecordView.as_view(),
+        name="financials-delete",
     ),
 
     # FR-ADMIN-001 -- suspend / reactivate a hackathon.
@@ -27,6 +80,11 @@ urlpatterns = [
         "hackathons/<uuid:id>/reactivate",
         views.ReactivateHackathonView.as_view(),
         name="hackathon-reactivate",
+    ),
+    path(
+        "hackathons/<uuid:id>/feature",
+        views.ToggleHackathonFeaturedView.as_view(),
+        name="hackathon-feature",
     ),
 
     # FR-ADMIN-001 -- suspend / reactivate an organization.
@@ -51,6 +109,16 @@ urlpatterns = [
         "users/<uuid:id>/reactivate",
         views.ReactivateAccountView.as_view(),
         name="user-reactivate",
+    ),
+    path(
+        "users/<uuid:id>",
+        views.DeleteAccountView.as_view(),
+        name="user-detail",
+    ),
+    path(
+        "users/<uuid:id>/delete",
+        views.DeleteAccountView.as_view(),
+        name="user-delete",
     ),
 
     # FR-ADMIN-002 -- platform-wide search.

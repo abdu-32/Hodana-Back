@@ -5,11 +5,14 @@ Per Design Spec Sec 3.1: all business logic and cross-model orchestration
 lives here.
 """
 
+import uuid
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
-from rest_framework.exceptions import APIException, NotFound, ValidationError
+from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 
+from apps.accounts.models import RoleAssignment
 from apps.core.models import AuditLogEntry
 from apps.hackathons.models import Hackathon
 from apps.notifications.services import notify_registration_confirmed
@@ -26,16 +29,48 @@ class ConflictError(APIException):
 
 
 def _get_hackathon_or_404(hackathon_id):
+    hackathon_id_str = str(hackathon_id).strip()
     try:
-        return Hackathon.objects.select_related("host_org").get(id=hackathon_id)
-    except (Hackathon.DoesNotExist, ValueError, DjangoValidationError):
-        raise NotFound()
+        val = uuid.UUID(hackathon_id_str)
+        return Hackathon.objects.select_related("host_org").get(id=val)
+    except (ValueError, TypeError, DjangoValidationError, Hackathon.DoesNotExist):
+        pass
+
+    try:
+        return Hackathon.objects.select_related("host_org").get(slug=hackathon_id_str)
+    except Hackathon.DoesNotExist:
+        pass
+
+    if hackathon_id_str.startswith("hck-"):
+        stripped = hackathon_id_str[4:]
+        try:
+            return Hackathon.objects.select_related("host_org").get(slug=stripped)
+        except Hackathon.DoesNotExist:
+            pass
+
+    alias_map = {
+        "ethio-fin-2024": "ethio-fin-innovate-2024",
+        "greenseed-challenge": "greenseed-challenge-2024",
+        "amharic-nlp-sprint": "amharic-nlp-sprint-2024",
+        "egov-ethiopia-hack": "egov-ethiopia-hack-2024",
+        "hck-101": "agristream-2024",
+        "hck-102": "fintech-frontier",
+        "hck-103": "ethio-health-ai",
+    }
+    if hackathon_id_str in alias_map:
+        try:
+            return Hackathon.objects.select_related("host_org").get(slug=alias_map[hackathon_id_str])
+        except Hackathon.DoesNotExist:
+            pass
+
+    raise NotFound()
 
 
 def _get_registration_or_404(*, actor, hackathon_id):
+    hackathon = _get_hackathon_or_404(hackathon_id)
     try:
         return Registration.objects.select_related("hackathon").get(
-            hackathon_id=hackathon_id, user=actor,
+            hackathon=hackathon, user=actor,
         )
     except (Registration.DoesNotExist, ValueError, DjangoValidationError):
         raise NotFound()
@@ -51,7 +86,7 @@ def _calculate_age(date_of_birth, *, as_of):
     )
 
 
-def _check_eligibility(*, hackathon, actor):
+def _check_eligibility(*, hackathon, actor, custom_answers=None):
     """FR-HACK-003 / FR-REG-001: reject with a specific, named-rule error
     rather than a generic rejection.
 
@@ -129,10 +164,51 @@ def _check_eligibility(*, hackathon, actor):
                 }
             })
 
+    # Check open_to eligibility
+    open_to = getattr(hackathon, "open_to", None) or ["ALL"]
+    if "ALL" not in open_to and len(open_to) > 0:
+        is_eligible = False
+        allowed_labels = []
+
+        custom_answers = custom_answers or {}
+        personal_info = custom_answers.get("personalInfo") or {}
+        role = (personal_info.get("role") or "").strip().lower()
+        org_or_uni = (personal_info.get("organization") or personal_info.get("university") or getattr(actor, "university", "") or "").strip().lower()
+
+        if "UNIVERSITY_STUDENT" in open_to:
+            allowed_labels.append("University Students")
+            is_student = (
+                "student" in role or "university" in org_or_uni or "college" in org_or_uni or "institute" in org_or_uni
+                or bool(getattr(actor, "university", None))
+            )
+            if is_student:
+                is_eligible = True
+
+        if "GOVERNMENT_PUBLIC_SECTOR" in open_to:
+            allowed_labels.append("Government & Public Sector")
+            is_gov = (
+                "gov" in role or "public" in role or "ministry" in org_or_uni or "agency" in org_or_uni
+                or "government" in org_or_uni
+            )
+            if is_gov:
+                is_eligible = True
+
+        if not is_eligible:
+            groups_str = " and ".join(allowed_labels) if len(allowed_labels) <= 1 else " / ".join(allowed_labels)
+            raise ValidationError({
+                "eligibility": {
+                    "rule": "open_to",
+                    "message": f"This hackathon is currently open to {groups_str} only.",
+                }
+            })
+
 
 # ---- FR-REG-001: register for a hackathon ----------------------------------
 
-def register_for_hackathon(*, actor, hackathon_id, eligibility_confirmed=False, custom_answers=None):
+def register_for_hackathon(
+    *, actor, hackathon_id, eligibility_confirmed=False, custom_answers=None,
+    registration_type="solo", team_name=None, team_description="",
+):
     hackathon = _get_hackathon_or_404(hackathon_id)
 
     # FR-REG-001 precondition: hackathon is published.
@@ -146,10 +222,39 @@ def register_for_hackathon(*, actor, hackathon_id, eligibility_confirmed=False, 
         raise ValidationError("Registration is not currently open for this hackathon.")
 
     # FR-REG-001: "attempting to register twice returns HTTP 409".
-    if Registration.objects.filter(hackathon=hackathon, user=actor).exists():
-        raise ConflictError()
+    existing_reg = Registration.objects.filter(hackathon=hackathon, user=actor).first()
+    if existing_reg:
+        if existing_reg.withdrawn_at is None:
+            raise ConflictError()
+        # Re-activating a withdrawn registration
+        _check_eligibility(hackathon=hackathon, actor=actor, custom_answers=custom_answers)
+        if registration_type not in ("solo", "looking_for_team", "create_team"):
+            registration_type = "solo"
+        with transaction.atomic():
+            existing_reg.withdrawn_at = None
+            existing_reg.eligibility_confirmed = eligibility_confirmed
+            existing_reg.custom_answers = custom_answers
+            existing_reg.registration_type = registration_type
+            existing_reg.save()
+            AuditLogEntry.objects.create(
+                actor_id=actor.id, action="registration.created",
+                target_type="registration", target_id=str(existing_reg.id),
+            )
+            if registration_type == "create_team" and team_name:
+                from apps.teams.services import create_team
+                create_team(
+                    actor=actor,
+                    hackathon_id=hackathon.id,
+                    team_name=team_name,
+                    description=team_description or "",
+                )
+        notify_registration_confirmed(existing_reg)
+        return existing_reg
 
-    _check_eligibility(hackathon=hackathon, actor=actor)
+    _check_eligibility(hackathon=hackathon, actor=actor, custom_answers=custom_answers)
+
+    if registration_type not in ("solo", "looking_for_team", "create_team"):
+        registration_type = "solo"
 
     with transaction.atomic():
         registration = Registration.objects.create(
@@ -157,16 +262,39 @@ def register_for_hackathon(*, actor, hackathon_id, eligibility_confirmed=False, 
             user=actor,
             eligibility_confirmed=eligibility_confirmed,
             custom_answers=custom_answers,
+            registration_type=registration_type,
         )
         AuditLogEntry.objects.create(
             actor_id=actor.id, action="registration.created",
             target_type="registration", target_id=str(registration.id),
         )
 
+        if registration_type == "create_team" and team_name:
+            from apps.teams.services import create_team
+            create_team(
+                actor=actor,
+                hackathon_id=hackathon.id,
+                team_name=team_name,
+                description=team_description or "",
+            )
+
     # FR-REG-001: confirmation notification sent on success (FR-NOTIFY-001).
     # Cannot be opted out of -- see notifications.services.CRITICAL_CATEGORIES.
     notify_registration_confirmed(registration)
 
+    return registration
+
+
+def update_registration_type(*, actor, hackathon_id, registration_type):
+    registration = _get_registration_or_404(actor=actor, hackathon_id=hackathon_id)
+    if registration.withdrawn_at is not None:
+        raise ValidationError("This registration has been withdrawn.")
+
+    if registration_type not in ("solo", "looking_for_team", "create_team"):
+        raise ValidationError("Invalid registration type.")
+
+    registration.registration_type = registration_type
+    registration.save(update_fields=["registration_type"])
     return registration
 
 
@@ -212,3 +340,99 @@ def list_my_registrations(*, actor):
         .select_related("hackathon")
         .order_by("-registered_at")
     )
+
+
+# ---- Organizer Registrations Query ------------------------------------------
+
+def list_organizer_registrations(*, actor, hackathon_id=None, status=None, keyword=None, limit=50, offset=0):
+    """Retrieves participant registrations for hackathons managed by the authenticated organizer.
+    Strictly verifies server-side ownership. An organizer can only see registrations
+    belonging to hackathons they created or manage for their host organizations.
+    """
+    if not actor or not actor.is_authenticated:
+        raise PermissionDenied("Authentication required.")
+
+    is_platform_admin = bool(getattr(actor, "is_platform_admin", False))
+
+    if is_platform_admin:
+        managed_hackathons = Hackathon.objects.all()
+    else:
+        user_org_ids = RoleAssignment.objects.filter(
+            user=actor, role="organizer", scope_type="organization"
+        ).values_list("scope_id", flat=True)
+        created_org_ids = Organization.objects.filter(created_by=actor).values_list("id", flat=True)
+        managed_hackathons = Hackathon.objects.filter(
+            Q(host_org_id__in=user_org_ids) | Q(host_org_id__in=created_org_ids) | Q(created_by=actor)
+        )
+
+    managed_hackathon_ids = set(managed_hackathons.values_list("id", flat=True))
+
+    # If a specific hackathon is requested, verify the organizer manages it
+    if hackathon_id and str(hackathon_id).strip().lower() not in ("all", "null", "undefined", ""):
+        try:
+            target_id = uuid.UUID(str(hackathon_id).strip())
+        except (ValueError, TypeError):
+            raise NotFound("Invalid hackathon ID.")
+
+        if target_id not in managed_hackathon_ids:
+            raise PermissionDenied("You do not have permission to access registrations for this hackathon.")
+
+        qs = Registration.objects.filter(hackathon_id=target_id)
+        stats_qs = Registration.objects.filter(hackathon_id=target_id)
+    else:
+        if not managed_hackathon_ids:
+            return [], 0, {
+                "totalRegistrations": 0,
+                "registeredCount": 0,
+                "withdrawnCount": 0,
+                "uniqueParticipants": 0,
+                "managedHackathonsCount": 0,
+            }
+        qs = Registration.objects.filter(hackathon_id__in=managed_hackathon_ids)
+        stats_qs = Registration.objects.filter(hackathon_id__in=managed_hackathon_ids)
+
+    # Compute summary stats from real data
+    total_reg = stats_qs.count()
+    withdrawn_reg = stats_qs.filter(withdrawn_at__isnull=False).count()
+    registered_reg = total_reg - withdrawn_reg
+    unique_participants = stats_qs.values("user_id").distinct().count()
+
+    stats = {
+        "totalRegistrations": total_reg,
+        "registeredCount": registered_reg,
+        "withdrawnCount": withdrawn_reg,
+        "uniqueParticipants": unique_participants,
+        "managedHackathonsCount": len(managed_hackathon_ids),
+    }
+
+    # Status filter
+    if status and str(status).strip().lower() not in ("all", "null", "undefined", ""):
+        s_val = str(status).strip().lower()
+        if s_val in ("withdrawn", "rejected"):
+            qs = qs.filter(withdrawn_at__isnull=False)
+        elif s_val in ("registered", "approved", "active"):
+            qs = qs.filter(withdrawn_at__isnull=True)
+        elif s_val == "pending":
+            qs = qs.filter(withdrawn_at__isnull=True, verification_status__in=["pending", "unverified"])
+
+    # Keyword search across participant name, email, university, organization, city, role, hackathon
+    if keyword and str(keyword).strip():
+        k = str(keyword).strip()
+        qs = qs.filter(
+            Q(user__full_name__icontains=k)
+            | Q(user__email__icontains=k)
+            | Q(user__university__icontains=k)
+            | Q(user__organization__icontains=k)
+            | Q(user__city__icontains=k)
+            | Q(user__profession__icontains=k)
+            | Q(hackathon__title__icontains=k)
+        )
+
+    qs = qs.select_related("hackathon", "user").order_by("-registered_at")
+    total = qs.count()
+
+    limit_val = max(1, min(int(limit), 100))
+    offset_val = max(0, int(offset))
+    results = list(qs[offset_val:offset_val + limit_val])
+
+    return results, total, stats

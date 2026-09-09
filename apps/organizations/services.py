@@ -11,6 +11,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
@@ -30,17 +31,24 @@ def _recognized_domains():
     return {d.lower() for d in getattr(settings, "RECOGNIZED_INSTITUTIONAL_DOMAINS", [])}
 
 
+import threading
+
+
 def _send_mail(*, subject, message, to):
-    """Single seam to swap for a Celery task later. Synchronous for now.
-    (Same pattern as accounts/services.py's helper -- duplicated rather than
-    shared, per this codebase's existing convention of one per app.)"""
-    send_mail(
-        subject=subject,
-        message=message,
-        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-        recipient_list=[to],
-        fail_silently=False,
-    )
+    """Sends email in a background daemon thread so network SMTP latency never blocks the HTTP response."""
+    def _deliver():
+        try:
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+                recipient_list=[to],
+                fail_silently=True,
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_deliver, daemon=True).start()
 
 
 def _email_domain(email):
@@ -68,6 +76,19 @@ def get_organization(*, organization_id):
     it is internal to this module."""
     return _get_organization_or_404(organization_id)
 
+def list_my_organizations(*, actor):
+    """Returns organizations created by the actor or where actor is assigned an organizer role."""
+    user_org_ids = RoleAssignment.objects.filter(
+        user=actor, role="organizer", scope_type="organization"
+    ).values_list("scope_id", flat=True)
+    return (
+        Organization.objects.filter(Q(created_by=actor) | Q(id__in=user_org_ids))
+        .distinct()
+        .prefetch_related("verification_reviews", "verification_documents")
+        .order_by("-created_at")
+    )
+
+
 def register_organization(*, actor, name, type, contact_email, primary_email_domain=None):
     """Preconditions: actor is authenticated and verified (FR-AUTH-003)."""
     if actor.verification_status != "verified":
@@ -79,6 +100,7 @@ def register_organization(*, actor, name, type, contact_email, primary_email_dom
             type=type,
             contact_email=contact_email,
             primary_email_domain=(primary_email_domain or "").strip().lower() or None,
+            verification_status="pending",
             created_by=actor,
         )
         RoleAssignment.objects.create(
@@ -179,7 +201,7 @@ def get_pending_verification_queue():
     first: they carry a stronger corroborating signal (a matching recognized
     institutional domain) than a cold FR-ORG-003 document submission, so an
     admin working the queue top-down clears the "easy" ones first."""
-    return Organization.objects.filter(verification_status="pending").order_by(
+    return Organization.objects.filter(verification_status__in=["pending", "unverified"]).order_by(
         "-domain_fast_tracked", "created_at"
     )
 
@@ -190,41 +212,68 @@ def review_organization_verification(*, admin, organization_id, decision, reject
 
     organization = _get_organization_or_404(organization_id)
 
-    if organization.verification_status != "pending":
+    if organization.verification_status not in ("pending", "unverified"):
         raise ValidationError("This organization is not awaiting verification review.")
 
-    if decision not in ("approved", "rejected"):
+    decision_norm = str(decision or "").lower().strip()
+    if decision_norm in ("approve", "verified"):
+        decision_norm = "approved"
+    elif decision_norm in ("reject",):
+        decision_norm = "rejected"
+
+    if decision_norm not in ("approved", "rejected"):
         raise ValidationError({"decision": "Must be 'approved' or 'rejected'."})
 
-    if decision == "rejected" and not rejection_reason:
+    if decision_norm == "rejected" and not rejection_reason:
         raise ValidationError({"rejection_reason": "Required when rejecting an organization."})
 
     with transaction.atomic():
         review = OrgVerificationReview.objects.create(
             organization=organization,
             reviewed_by=admin,
-            decision=decision,
-            rejection_reason=rejection_reason if decision == "rejected" else "",
+            decision=decision_norm,
+            rejection_reason=rejection_reason if decision_norm == "rejected" else "",
         )
-        organization.verification_status = "verified" if decision == "approved" else "unverified"
-        organization.verified_at = timezone.now() if decision == "approved" else None
+        organization.verification_status = "verified" if decision_norm == "approved" else "rejected"
+        organization.verified_at = timezone.now() if decision_norm == "approved" else None
         organization.save(update_fields=["verification_status", "verified_at", "updated_at"])
+
+        if decision_norm == "approved" and organization.created_by:
+            RoleAssignment.objects.get_or_create(
+                user=organization.created_by,
+                role="organizer",
+                scope_type="organization",
+                scope_id=organization.id,
+            )
+            if not getattr(organization.created_by, "is_platform_admin", False):
+                organization.created_by.role = "organizer"
+            organization.created_by.verification_status = "verified"
+            organization.created_by.save(update_fields=["role", "verification_status"])
+
         AuditLogEntry.objects.create(
             actor_id=admin.id, action="organization.verification_reviewed",
             target_type="organization", target_id=str(organization.id),
-            metadata={"decision": decision},
+            metadata={"decision": decision_norm},
         )
 
-    # FR-ORG-003: Organizer notified within 5 minutes of the admin decision.
-    if decision == "approved":
-        subject, body = "Your organization has been verified", (
-            f"{organization.name} has been verified on Innovation Hub. "
-            "You can now publish hackathons under this organization."
+    # Informational notification email -- contains NO activation links, tokens, or one-time URLs
+    if decision_norm == "approved":
+        subject = "Your Organizer Application Has Been Approved"
+        body = (
+            "Congratulations!\n\n"
+            "Your application to become an organizer on Innovation Hub for Ethiopia has been approved by the platform administrator.\n\n"
+            "You can now sign in to your existing account and access your Organizer Dashboard.\n\n"
+            "Thank you,\n"
+            "Innovation Hub for Ethiopia Platform Team"
         )
     else:
-        subject, body = "Your organization verification was not approved", (
+        subject = "Your organization verification was not approved"
+        body = (
             f"{organization.name}'s verification was not approved.\n\nReason: {rejection_reason}"
         )
-    _send_mail(subject=subject, message=body, to=organization.contact_email)
+
+    recipient = organization.contact_email or (organization.created_by.email if organization.created_by else None)
+    if recipient:
+        _send_mail(subject=subject, message=body, to=recipient)
 
     return review

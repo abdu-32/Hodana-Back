@@ -84,6 +84,26 @@ class Account(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     date_of_birth = models.DateField(null=True, blank=True)
     country = models.CharField(max_length=2, null=True, blank=True)  # ISO 3166-1 alpha-2, e.g. "ET"
 
+    # Extended Participant Profile fields
+    phone_number = models.CharField(max_length=30, blank=True, default="")
+    city = models.CharField(max_length=100, blank=True, default="")
+    organization = models.CharField(max_length=255, blank=True, default="")
+    department = models.CharField(max_length=255, blank=True, default="")
+    field_of_study = models.CharField(max_length=255, blank=True, default="")
+    profession = models.CharField(max_length=100, blank=True, default="")
+    experience_level = models.CharField(max_length=50, blank=True, default="")
+    professional_title = models.CharField(max_length=255, blank=True, default="")
+    years_of_experience = models.SmallIntegerField(null=True, blank=True)
+    linkedin_url = models.TextField(blank=True, default="")
+    github_url = models.TextField(blank=True, default="")
+    website_url = models.TextField(blank=True, default="")
+    twitter_url = models.TextField(blank=True, default="")
+    instagram_url = models.TextField(blank=True, default="")
+    interested_in_teams = models.CharField(max_length=20, default="yes", blank=True)
+    looking_for_teammates = models.BooleanField(default=False)
+    team_seeking_description = models.TextField(blank=True, default="")
+    preferred_team_roles = ArrayField(models.TextField(), default=list, blank=True)
+
     oauth_provider = models.CharField(
         max_length=20, choices=OAUTH_PROVIDER_CHOICES, null=True, blank=True
     )
@@ -94,6 +114,15 @@ class Account(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
     )
     email_verified_at = models.DateTimeField(null=True, blank=True)
 
+    PLATFORM_ADMIN_EMAIL = "abdulhalimaliyi54@gmail.com"
+
+    ROLE_CHOICES = (
+        ("participant", "Participant"),
+        ("organizer", "Organizer"),
+        ("judge", "Judge"),
+        ("admin", "Admin"),
+    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="participant")
     is_platform_admin = models.BooleanField(default=False)  # Design Spec Sec 4.3
     token_version = models.IntegerField(default=0)  # FR-AUTH-004, NFR-SEC-005
 
@@ -128,6 +157,22 @@ class Account(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
                 name="unique_oauth_identity",
             ),
         ]
+
+    def save(self, *args, **kwargs):
+        is_admin_email = bool(self.email and self.email.strip().lower() == self.PLATFORM_ADMIN_EMAIL)
+        if is_admin_email:
+            self.is_platform_admin = True
+            self.role = "admin"
+        elif not self.is_platform_admin:
+            if self.role == "admin":
+                self.role = "participant"
+
+        if "update_fields" in kwargs and kwargs["update_fields"] is not None:
+            update_fields = set(kwargs["update_fields"])
+            update_fields.update({"is_platform_admin", "role"})
+            kwargs["update_fields"] = list(update_fields)
+
+        super().save(*args, **kwargs)
 
     @property
     def is_active(self):

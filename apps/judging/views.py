@@ -5,11 +5,103 @@ response status codes. No business logic here (Design Spec Sec 3.1).
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import serializers, services
+
+
+class JudgeInvitationDetailView(APIView):
+    """GET /judging/judge/invitations/{invitation_id} -- Public token/invitation info."""
+
+    permission_classes = [AllowAny]
+
+    @extend_schema(responses={200: serializers.JudgeInvitationDetailSerializer})
+    def get(self, request, invitation_id):
+        invitation = services.get_invitation_details(invitation_id)
+        return Response(serializers.JudgeInvitationDetailSerializer(invitation).data)
+
+
+class JudgeInvitationDeclineView(APIView):
+    """POST /judging/judge/invitations/{invitation_id}/decline."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=None, responses={200: serializers.JudgeInvitationSerializer})
+    def post(self, request, invitation_id):
+        invitation = services.decline_invitation(actor=request.user, invitation_id=invitation_id)
+        return Response(serializers.JudgeInvitationSerializer(invitation).data)
+
+
+class JudgeInvitationRevokeView(APIView):
+    """POST /judging/judge/invitations/{invitation_id}/revoke."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=None, responses={200: serializers.JudgeInvitationSerializer})
+    def post(self, request, invitation_id):
+        invitation = services.revoke_invitation(actor=request.user, invitation_id=invitation_id)
+        return Response(serializers.JudgeInvitationSerializer(invitation).data)
+
+
+class OrganizerJudgeListView(APIView):
+    """GET /judging/organizer/judges -- List judges and invitations for organizer's hackathons."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses={200: serializers.OrganizerJudgeItemSerializer(many=True)})
+    def get(self, request):
+        judges = services.list_organizer_judges(
+            actor=request.user,
+            hackathon_id=request.query_params.get("hackathonId"),
+            status=request.query_params.get("status"),
+        )
+        return Response(serializers.OrganizerJudgeItemSerializer(judges, many=True).data)
+
+
+class JudgeAssignedHackathonListView(APIView):
+    """GET /judging/assigned-hackathons -- Hackathons assigned to the authenticated judge."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses={200: serializers.JudgeAssignedHackathonSerializer(many=True)})
+    def get(self, request):
+        hackathons = services.list_assigned_hackathons_for_judge(actor=request.user)
+        return Response(serializers.JudgeAssignedHackathonSerializer(hackathons, many=True).data)
+
+
+class JudgeSubmissionListView(APIView):
+    """GET /judging/hackathons/{hackathon_id}/submissions -- Submissions for an assigned hackathon."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses={200: serializers.JudgeSubmissionSerializer(many=True)})
+    def get(self, request, hackathon_id):
+        submissions = services.list_submissions_for_judge(
+            actor=request.user,
+            hackathon_id=hackathon_id,
+            category=request.query_params.get("category"),
+            status_filter=request.query_params.get("status"),
+        )
+        return Response(serializers.JudgeSubmissionSerializer(submissions, many=True).data)
+
+
+class JudgeSubmissionEvaluateView(APIView):
+    """POST /judging/submissions/{submission_id}/evaluate -- Submit multi-criteria evaluation."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=serializers.JudgeEvaluationSubmitSerializer)
+    def post(self, request, submission_id):
+        serializer = serializers.JudgeEvaluationSubmitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = services.submit_judge_evaluation(
+            actor=request.user,
+            submission_id=submission_id,
+            **serializer.validated_data,
+        )
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class JudgingRoundListCreateView(APIView):

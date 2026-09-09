@@ -2776,6 +2776,13 @@ components:
         prizeInfo:
           type: string
           readOnly: true
+        totalPrizeBudget:
+          type: string
+          format: decimal
+          readOnly: true
+        prizeDistribution:
+          readOnly: true
+          nullable: true
         locationMode:
           type: string
           readOnly: true
@@ -2873,6 +2880,12 @@ components:
         prizeInfo:
           type: string
           default: ''
+        totalPrizeBudget:
+          type: string
+          format: decimal
+          default: '0.00'
+        prizeDistribution:
+          nullable: true
         locationMode:
           allOf:
           - $ref: '#/components/schemas/LocationModeEnum'
@@ -2948,6 +2961,11 @@ components:
           type: string
         prizeInfo:
           type: string
+        totalPrizeBudget:
+          type: string
+          format: decimal
+        prizeDistribution:
+          nullable: true
         eligibilityRules:
           nullable: true
         tags:

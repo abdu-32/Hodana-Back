@@ -5,15 +5,20 @@ All cross-model orchestration and business rules for FR-HACK-004 and
 FR-JUDGE-001..004 live here.
 """
 
+import logging
 from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP
 from uuid import UUID
 
 from django.apps import apps as django_apps
+from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
+from django.core.mail import send_mail
+from django.db import models, transaction
 from django.utils import timezone
 from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
+
+logger = logging.getLogger(__name__)
 
 from apps.accounts.models import Account, RoleAssignment
 from apps.core.models import AuditLogEntry
@@ -246,23 +251,90 @@ def create_criterion(*, actor, round_id, name, min_score=0, max_score=None, weig
 
 # ---- FR-JUDGE-001: invitations and assignment -------------------------------
 
+def get_invitation_details(invitation_id):
+    try:
+        return JudgeInvitation.objects.select_related(
+            "round", "round__hackathon", "round__hackathon__host_org",
+        ).get(id=invitation_id)
+    except (JudgeInvitation.DoesNotExist, ValueError, DjangoValidationError):
+        raise NotFound("Judge invitation not found.")
+
+
 @transaction.atomic
-def invite_judge(*, actor, email, round_id):
-    round = _get_round_or_404(round_id)
-    _require_round_manager(actor=actor, round=round)
+def invite_judge(*, actor, email, round_id=None, hackathon_id=None, note=""):
+    if not round_id and not hackathon_id:
+        raise ValidationError("Either round_id or hackathon_id is required.")
+
+    if round_id:
+        round = _get_round_or_404(round_id)
+        _require_round_manager(actor=actor, round=round)
+    else:
+        try:
+            hackathon = Hackathon.objects.select_related("host_org").get(id=hackathon_id)
+        except (Hackathon.DoesNotExist, ValueError, DjangoValidationError):
+            raise NotFound("Hackathon not found.")
+        _require_organizer(actor=actor, hackathon=hackathon)
+        round, _ = JudgingRound.objects.get_or_create(hackathon=hackathon, track=None)
+
     if round.status != "not_started":
         raise ValidationError("Judges cannot be invited after the round has opened.")
+
     normalized = email.strip().lower()
-    invitation = JudgeInvitation.objects.create(
-        email=normalized, round=round, invited_at=timezone.now(),
+    existing_inv = JudgeInvitation.objects.filter(
+        round=round, email=normalized, status__in=["sent", "accepted"],
+    ).first()
+
+    if existing_inv and existing_inv.status == "accepted":
+        raise ConflictError("This user is already an accepted judge for this hackathon.")
+
+    if existing_inv:
+        invitation = existing_inv
+        if note:
+            invitation.note = note
+            invitation.save(update_fields=["note"])
+    else:
+        invitation = JudgeInvitation.objects.create(
+            email=normalized, round=round, invited_at=timezone.now(), note=note or "",
+        )
+
+    # Dispatch Judge Invitation Email
+    frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
+    accept_link = f"{frontend_url}/accept-judge-invite?token={invitation.id}"
+    hackathon_title = round.hackathon.title if hasattr(round, "hackathon") and round.hackathon else "Innovation Hackathon"
+    org_name = round.hackathon.host_org.name if hasattr(round.hackathon, "host_org") and round.hackathon.host_org else "Event Organizer"
+    subject = f"Invitation: Official Judge Panelist for {hackathon_title}"
+    inviter_name = getattr(actor, "full_name", None) or getattr(actor, "email", "Event Organizer")
+    
+    note_line = f"\nPersonal Note from Organizer:\n\"{note.strip()}\"\n" if note and note.strip() else ""
+
+    message = (
+        f"Dear Colleague,\n\n"
+        f"You have been officially invited by {inviter_name} ({org_name}) to serve as an Official Judge for '{hackathon_title}'.\n\n"
+        f"Your technical expertise, evaluation experience, and domain insights will play a key role in reviewing submissions and selecting the winning innovations.\n"
+        f"{note_line}\n"
+        f"Please click the link below to review your invitation and choose whether to Accept or Decline:\n"
+        f"{accept_link}\n\n"
+        f"Best regards,\n"
+        f"HODANA Innovation Ecosystem Team"
     )
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            recipient_list=[normalized],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        logger.warning("Could not dispatch judge invitation email to %s: %s", normalized, exc)
+
     return invitation
 
 
 @transaction.atomic
 def accept_invitation(*, actor, invitation_id):
     try:
-        invitation = JudgeInvitation.objects.select_related("round").get(id=invitation_id)
+        invitation = JudgeInvitation.objects.select_related("round", "round__hackathon").get(id=invitation_id)
     except (JudgeInvitation.DoesNotExist, ValueError, DjangoValidationError):
         raise NotFound()
     if invitation.email.lower() != actor.email.lower():
@@ -279,6 +351,353 @@ def accept_invitation(*, actor, invitation_id):
         scope_id=invitation.round.hackathon_id,
     )
     return invitation
+
+
+@transaction.atomic
+def decline_invitation(*, actor, invitation_id):
+    invitation = get_invitation_details(invitation_id)
+    if invitation.email.lower() != actor.email.lower():
+        raise PermissionDenied("This invitation is not addressed to your account.")
+    if invitation.status not in ["sent", "accepted"]:
+        raise ConflictError("This invitation is no longer available.")
+    invitation.status = "declined"
+    invitation.responded_at = timezone.now()
+    invitation.save(update_fields=["status", "responded_at"])
+    RoleAssignment.objects.filter(
+        user=actor, role="judge", scope_type="hackathon", scope_id=invitation.round.hackathon_id,
+    ).delete()
+    JudgingAssignment.objects.filter(
+        round=invitation.round, judge_user=actor,
+    ).delete()
+    return invitation
+
+
+@transaction.atomic
+def revoke_invitation(*, actor, invitation_id):
+    invitation = get_invitation_details(invitation_id)
+    _require_organizer(actor=actor, hackathon=invitation.round.hackathon)
+    invitation.status = "revoked"
+    invitation.save(update_fields=["status"])
+    matching_accounts = Account.objects.filter(email__iexact=invitation.email)
+    for acc in matching_accounts:
+        RoleAssignment.objects.filter(
+            user=acc, role="judge", scope_type="hackathon", scope_id=invitation.round.hackathon_id,
+        ).delete()
+        JudgingAssignment.objects.filter(
+            round=invitation.round, judge_user=acc,
+        ).delete()
+    return invitation
+
+
+def list_organizer_judges(*, actor, hackathon_id=None, status=None):
+    org_ids = RoleAssignment.objects.filter(
+        user=actor, role="organizer", scope_type="organization",
+    ).values_list("scope_id", flat=True)
+
+    # Also include hackathons created directly by actor
+    created_hackathon_ids = Hackathon.objects.filter(created_by=actor).values_list("id", flat=True)
+
+    qs = JudgeInvitation.objects.filter(
+        models.Q(round__hackathon__host_org_id__in=org_ids) |
+        models.Q(round__hackathon_id__in=created_hackathon_ids),
+    ).select_related("round__hackathon", "round")
+
+    if hackathon_id and hackathon_id != "All":
+        qs = qs.filter(round__hackathon_id=hackathon_id)
+
+    if status and status != "All":
+        qs = qs.filter(status__iexact=status.lower())
+
+    invitations = list(qs.order_by("-invited_at"))
+
+    results = []
+    email_map = {inv.email.lower(): None for inv in invitations}
+    for acc in Account.objects.filter(email__in=email_map.keys()):
+        email_map[acc.email.lower()] = acc
+
+    for inv in invitations:
+        acc = email_map.get(inv.email.lower())
+        assigned_count = 0
+        scored_count = 0
+        if acc:
+            assigned_count = JudgingAssignment.objects.filter(
+                round=inv.round, judge_user=acc,
+            ).count()
+            scored_count = Score.objects.filter(
+                criterion__round=inv.round, judge_user=acc,
+            ).values("submission").distinct().count()
+
+        results.append({
+            "id": str(inv.id),
+            "email": inv.email,
+            "name": acc.full_name if acc else inv.email.split("@")[0],
+            "hackathonId": str(inv.round.hackathon_id),
+            "hackathonTitle": inv.round.hackathon.title,
+            "status": inv.status.upper(),
+            "note": inv.note or "",
+            "invitedAt": inv.invited_at.isoformat() if inv.invited_at else None,
+            "respondedAt": inv.responded_at.isoformat() if inv.responded_at else None,
+            "assignmentsCount": assigned_count,
+            "scoredCount": scored_count,
+        })
+    return results
+
+
+def list_assigned_hackathons_for_judge(*, actor):
+    direct_hackathon_ids = set(RoleAssignment.objects.filter(
+        user=actor, role="judge", scope_type="hackathon",
+    ).values_list("scope_id", flat=True))
+
+    invited_hackathon_ids = set(JudgeInvitation.objects.filter(
+        email__iexact=actor.email, status="accepted",
+    ).values_list("round__hackathon_id", flat=True))
+
+    assignment_hackathon_ids = set(JudgingAssignment.objects.filter(
+        judge_user=actor,
+    ).values_list("round__hackathon_id", flat=True))
+
+    all_ids = direct_hackathon_ids | invited_hackathon_ids | assignment_hackathon_ids
+    is_judge = (
+        getattr(actor, "role", None) == "judge"
+        or getattr(actor, "is_platform_admin", False)
+        or RoleAssignment.objects.filter(user=actor, role="judge").exists()
+    )
+
+    if is_judge:
+        submission_hids = set(Submission.objects.values_list("hackathon_id", flat=True))
+        all_ids = all_ids | submission_hids
+        if not all_ids:
+            all_ids = set(Hackathon.objects.values_list("id", flat=True))
+    elif not all_ids:
+        return []
+
+    hackathons = Hackathon.objects.filter(
+        id__in=all_ids,
+    ).select_related("host_org").order_by("-submission_closes_at")
+
+    results = []
+    for h in hackathons:
+        total_subs = Submission.objects.filter(
+            hackathon=h, eligibility_status="eligible",
+        ).count()
+        evaluated_subs = Score.objects.filter(
+            criterion__round__hackathon=h, judge_user=actor,
+        ).values("submission").distinct().count()
+
+        org_name = h.host_org.name if h.host_org else "Innovation Hub"
+        category_str = ", ".join(h.tags[:2]) if h.tags else "Technology"
+
+        results.append({
+            "id": str(h.id),
+            "title": h.title,
+            "slug": h.slug,
+            "organizerName": org_name,
+            "deadline": h.submission_closes_at.isoformat() if h.submission_closes_at else "",
+            "totalSubmissions": total_subs,
+            "evaluatedSubmissions": evaluated_subs,
+            "category": category_str,
+            "bannerImage": h.banner_url or "",
+        })
+    return results
+
+
+def list_submissions_for_judge(*, actor, hackathon_id, category=None, status_filter=None):
+    try:
+        hackathon = Hackathon.objects.get(id=hackathon_id)
+    except (Hackathon.DoesNotExist, ValueError, DjangoValidationError):
+        try:
+            hackathon = Hackathon.objects.get(slug=hackathon_id)
+        except Hackathon.DoesNotExist:
+            raise NotFound("Hackathon not found.")
+
+    real_hackathon_id = hackathon.id
+
+    has_role = RoleAssignment.objects.filter(
+        user=actor, role="judge", scope_type="hackathon", scope_id=real_hackathon_id,
+    ).exists()
+    has_accepted_invite = JudgeInvitation.objects.filter(
+        round__hackathon_id=real_hackathon_id, email__iexact=actor.email, status="accepted",
+    ).exists()
+    has_assignment = JudgingAssignment.objects.filter(
+        round__hackathon_id=real_hackathon_id, judge_user=actor,
+    ).exists()
+
+    is_judge_authorized = has_role or has_accepted_invite or has_assignment or getattr(actor, "is_platform_admin", False) or getattr(actor, "role", None) == "judge" or RoleAssignment.objects.filter(user=actor, role="judge").exists()
+    if not is_judge_authorized:
+        raise PermissionDenied("You are not authorized to judge this hackathon.")
+
+    assignments = list(JudgingAssignment.objects.filter(
+        round__hackathon_id=real_hackathon_id, judge_user=actor,
+    ).select_related("submission"))
+
+    if assignments:
+        submission_ids = [a.submission_id for a in assignments]
+        subs_qs = Submission.objects.filter(
+            id__in=submission_ids,
+        ).exclude(eligibility_status="disqualified")
+    else:
+        subs_qs = Submission.objects.filter(
+            hackathon_id=real_hackathon_id,
+        ).exclude(eligibility_status="disqualified")
+
+    subs_qs = subs_qs.select_related("team", "hackathon").prefetch_related("team__members")
+    submissions = list(subs_qs.order_by("created_at"))
+
+    scores = list(Score.objects.filter(
+        criterion__round__hackathon_id=real_hackathon_id,
+        judge_user=actor,
+        submission__in=submissions,
+    ).select_related("criterion"))
+
+    scores_by_sub = defaultdict(list)
+    for sc in scores:
+        scores_by_sub[sc.submission_id].append(sc)
+
+    criteria_count = JudgingCriterion.objects.filter(
+        round__hackathon_id=real_hackathon_id, round__track__isnull=True,
+    ).count()
+
+    results = []
+    for s in submissions:
+        sub_scores = scores_by_sub.get(s.id, [])
+        has_any = len(sub_scores) > 0
+        all_final = has_any and all(sc.status == "final" for sc in sub_scores) and (criteria_count == 0 or len(sub_scores) >= criteria_count)
+
+        eval_status = "NOT_STARTED"
+        if all_final:
+            eval_status = "COMPLETED"
+        elif has_any:
+            eval_status = "IN_PROGRESS"
+
+        if status_filter and status_filter != "all" and eval_status.lower() != status_filter.lower():
+            continue
+
+        my_eval = None
+        if has_any:
+            crit_scores = {}
+            for sc in sub_scores:
+                crit_name = sc.criterion.name.lower()
+                crit_scores[crit_name] = float(sc.score_value)
+
+            overall_val = sum((Decimal(sc.score_value) for sc in sub_scores), Decimal("0")) / Decimal(len(sub_scores)) if sub_scores else Decimal("0")
+            latest_comment = next((sc.comment for sc in sub_scores if sc.comment), "")
+
+            my_eval = {
+                "id": f"eval-{s.id}",
+                "submissionId": str(s.id),
+                "judgeId": str(actor.id),
+                "criteriaScores": crit_scores,
+                "overallScore": float(overall_val.quantize(Decimal("0.1"))),
+                "feedback": latest_comment,
+                "status": "SUBMITTED" if all_final else "DRAFT",
+                "updatedAt": (sub_scores[0].updated_at or sub_scores[0].created_at).isoformat() if sub_scores else "",
+            }
+
+        team_members_count = s.team.members.count() if s.team else 1
+        team_name = s.team.team_name if s.team else "Independent Innovator"
+        team_id = str(s.team.id) if s.team else f"team-{s.id}"
+
+        results.append({
+            "id": str(s.id),
+            "teamId": team_id,
+            "teamName": team_name,
+            "teamMembersCount": team_members_count,
+            "projectTitle": s.title,
+            "description": s.description or "",
+            "tagline": s.tagline or (s.description[:100] + "..." if s.description else ""),
+            "category": hackathon.tags[0] if hackathon.tags else "General",
+            "hackathonId": str(hackathon.id),
+            "hackathonName": hackathon.title,
+            "repoUrl": getattr(s, "repo_link", "") or "",
+            "demoUrl": (s.attachment_urls[0] if getattr(s, "attachment_urls", None) else "") or "",
+            "videoUrl": getattr(s, "demo_video_url", "") or "",
+            "pitchDeckUrl": "",
+            "techStack": getattr(s, "technologies", []) or [],
+            "evaluationStatus": eval_status,
+            "myEvaluation": my_eval,
+        })
+
+    return results
+
+
+@transaction.atomic
+def submit_judge_evaluation(*, actor, hackathon_id=None, submission_id, criteria_scores=None, criteriaScores=None, feedback="", status="final"):
+    scores_dict = criteria_scores if criteria_scores is not None else (criteriaScores or {})
+    submission = _get_submission_or_404(submission_id)
+    if not hackathon_id:
+        hackathon_id = submission.hackathon_id
+    elif str(submission.hackathon_id) != str(hackathon_id):
+        raise ValidationError("Submission does not belong to the specified hackathon.")
+
+    has_role = RoleAssignment.objects.filter(
+        user=actor, role="judge", scope_type="hackathon", scope_id=hackathon_id,
+    ).exists()
+    has_accepted_invite = JudgeInvitation.objects.filter(
+        round__hackathon_id=hackathon_id, email__iexact=actor.email, status="accepted",
+    ).exists()
+    has_assignment = JudgingAssignment.objects.filter(
+        round__hackathon_id=hackathon_id, judge_user=actor,
+    ).exists()
+
+    is_judge_authorized = has_role or has_accepted_invite or has_assignment or getattr(actor, "is_platform_admin", False) or getattr(actor, "role", None) == "judge" or RoleAssignment.objects.filter(user=actor, role="judge").exists()
+    if not is_judge_authorized:
+        raise PermissionDenied("You are not authorized to judge this hackathon.")
+
+    judging_round, _ = JudgingRound.objects.get_or_create(hackathon_id=hackathon_id, track=None)
+
+    criteria = list(judging_round.criteria.all())
+    if not criteria:
+        default_specs = [
+            ("Innovation", 0, 10, Decimal("25.00")),
+            ("Technical Execution", 0, 10, Decimal("25.00")),
+            ("Design & Usability", 0, 10, Decimal("25.00")),
+            ("Impact & Value", 0, 10, Decimal("25.00")),
+        ]
+        for name, min_s, max_s, wt in default_specs:
+            criteria.append(JudgingCriterion.objects.create(
+                round=judging_round, name=name, min_score=min_s, max_score=max_s, weight=wt,
+            ))
+
+    now = timezone.now()
+    saved_scores = []
+    for crit in criteria:
+        val = None
+        for key, v in scores_dict.items():
+            if key.lower() in crit.name.lower() or crit.name.lower() in key.lower():
+                val = int(round(v) if isinstance(v, float) else v)
+                break
+        if val is None:
+            val = int(crit.min_score)
+
+        sc, created = Score.objects.get_or_create(
+            submission=submission,
+            judge_user=actor,
+            criterion=crit,
+            defaults={
+                "score_value": val,
+                "comment": feedback or "",
+                "status": status,
+                "finalized_at": now if status == "final" else None,
+            },
+        )
+        if not created:
+            sc.score_value = val
+            if feedback:
+                sc.comment = feedback
+            sc.status = status
+            sc.finalized_at = now if status == "final" else None
+            sc.save()
+        saved_scores.append(sc)
+
+    return {
+        "submissionId": str(submission.id),
+        "judgeId": str(actor.id),
+        "criteriaScores": scores_dict,
+        "overallScore": float(sum((Decimal(sc.score_value) for sc in saved_scores), Decimal("0")) / Decimal(len(saved_scores))) if saved_scores else 0.0,
+        "feedback": feedback,
+        "status": "SUBMITTED" if status == "final" else "DRAFT",
+        "updatedAt": now.isoformat(),
+    }
 
 
 def _eligible_submissions_for_round(round):

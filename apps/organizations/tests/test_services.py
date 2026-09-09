@@ -342,7 +342,7 @@ class TestReviewOrganizationVerification:
         )
         assert len(mailoutbox) == 1
         assert mailoutbox[0].to == [pending_organization.contact_email]
-        assert "verified" in mailoutbox[0].subject.lower()
+        assert "approved" in mailoutbox[0].subject.lower()
 
     def test_TC_ORG_003c_rejection_reverts_to_unverified(self, platform_admin, pending_organization, mailoutbox):
         review = services.review_organization_verification(

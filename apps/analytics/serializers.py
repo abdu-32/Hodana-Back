@@ -54,3 +54,13 @@ class DemographicBreakdownSerializer(serializers.Serializer):
     bySkill = DemographicBucketSerializer(many=True, source="by_skill")
     byAgeGroup = DemographicBucketSerializer(many=True, source="by_age_group")
     byCountry = DemographicBucketSerializer(many=True, source="by_country")
+
+
+class PlatformStatsSerializer(serializers.Serializer):
+    """Real-time platform-wide statistics for public hero/landing pages."""
+
+    activeDevelopers = serializers.IntegerField(source="active_developers")
+    totalRegistrations = serializers.IntegerField(source="total_registrations")
+    totalHackathons = serializers.IntegerField(source="total_hackathons")
+    totalPrizeVolumeETB = serializers.FloatField(source="total_prize_volume_etb")
+    totalProjects = serializers.IntegerField(source="total_projects")

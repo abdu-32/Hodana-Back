@@ -11,11 +11,22 @@ authenticated at all.
 """
 
 from drf_spectacular.utils import extend_schema
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import serializers, services
+
+
+class PlatformStatsView(APIView):
+    """GET /analytics/platform-stats -- Public ecosystem totals and active developer count."""
+
+    permission_classes = [AllowAny]
+
+    @extend_schema(responses={200: serializers.PlatformStatsSerializer})
+    def get(self, request):
+        stats = services.get_platform_stats()
+        return Response(serializers.PlatformStatsSerializer(stats).data)
 
 
 class RegistrationDashboardView(APIView):

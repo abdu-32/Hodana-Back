@@ -23,6 +23,8 @@ ROUND_STATUS_CHOICES = [
 INVITATION_STATUS_CHOICES = [
     ("sent", "Sent"),
     ("accepted", "Accepted"),
+    ("declined", "Declined"),
+    ("revoked", "Revoked"),
     ("expired", "Expired"),
 ]
 
@@ -157,6 +159,7 @@ class JudgeInvitation(models.Model):
     )
     invited_at = models.DateTimeField()
     responded_at = models.DateTimeField(null=True, blank=True)
+    note = models.TextField(blank=True, default="")
 
     class Meta:
         app_label = "judging"

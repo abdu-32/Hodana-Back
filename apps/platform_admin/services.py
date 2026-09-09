@@ -31,6 +31,7 @@ than trusting the view layer alone.
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
 from apps.accounts.models import Account
@@ -153,6 +154,29 @@ def reactivate_hackathon(*, admin, hackathon_id, reason):
     return hackathon
 
 
+def toggle_hackathon_featured(*, admin, hackathon_id):
+    """Toggles the 'Featured' tag on a hackathon by platform administrators."""
+    _require_platform_admin(admin)
+    hackathon = _get_hackathon_or_404(hackathon_id)
+    tags = list(hackathon.tags or [])
+    if "Featured" in tags:
+        tags = [t for t in tags if t != "Featured"]
+        action = "hackathon.unfeatured"
+    else:
+        tags.append("Featured")
+        action = "hackathon.featured"
+
+    with transaction.atomic():
+        hackathon.tags = tags
+        hackathon.save(update_fields=["tags", "updated_at"])
+        _record_moderation_action(
+            admin=admin, action=action,
+            target_type="hackathon", target_id=hackathon.id,
+            reason="Toggled featured status by administrator",
+        )
+    return hackathon
+
+
 # ---- FR-ADMIN-001: suspend / reactivate an organization --------------------
 
 def suspend_organization(*, admin, organization_id, reason):
@@ -239,6 +263,33 @@ def reactivate_account(*, admin, user_id, reason):
             admin=admin, action="account.reactivated",
             target_type="account", target_id=account.id, reason=reason,
         )
+    return account
+
+
+def delete_account(*, admin, user_id, reason=None):
+    """Admin-initiated user account deletion.
+    Revokes tokens immediately, logs audit action, and soft-deletes the user.
+    """
+    _require_platform_admin(admin)
+    account = _get_account_or_404(user_id)
+
+    if str(account.id) == str(admin.id):
+        raise ValidationError("A Platform Admin cannot delete their own account.")
+
+    delete_reason = (reason or "").strip() or "Account deleted by platform administrator"
+
+    with transaction.atomic():
+        _record_moderation_action(
+            admin=admin,
+            action="account.deleted",
+            target_type="account",
+            target_id=account.id,
+            reason=delete_reason,
+        )
+        account.deleted_at = timezone.now()
+        account.is_suspended = True
+        account.token_version += 1
+        account.save(update_fields=["deleted_at", "is_suspended", "token_version", "updated_at"])
     return account
 
 

@@ -4,6 +4,8 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 # TokenRefreshView import removed -- accounts.views.RefreshView replaces it
 # (contract shape + token_version check; see apps/accounts/services.py)
 
+from apps.hackathons.views import HackathonExportView
+
 urlpatterns = [
     path("admin/", admin.site.urls),
 
@@ -15,6 +17,8 @@ urlpatterns = [
     # prefixes resolve to api/v1/auth/... and api/v1/users/... correctly.
     path("api/v1/", include("apps.accounts.urls")),
 
+    path("api/v1/hackathons/export", HackathonExportView.as_view(), name="hackathons-export-direct"),
+    path("api/v1/hackathons/export/", HackathonExportView.as_view(), name="hackathons-export-slash-direct"),
     path("api/v1/organizations/", include("apps.organizations.urls")),
     path("api/v1/hackathons/", include("apps.hackathons.urls")),
     path("api/v1/registrations/", include("apps.registrations.urls")),

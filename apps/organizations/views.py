@@ -42,6 +42,18 @@ class OrganizationListCreateView(APIView):
         return Response(body, status=status.HTTP_201_CREATED)
 
 
+class OrganizationMineView(APIView):
+    """GET /organizations/mine -- returns the organizations managed or created by the requester,
+    including verification status, rejection reason, and document counts."""
+
+    @extend_schema(responses={200: serializers.OrganizationMineSerializer(many=True)})
+    def get(self, request):
+        if not request.user or not request.user.is_authenticated:
+            return Response([], status=status.HTTP_200_OK)
+        orgs = services.list_my_organizations(actor=request.user)
+        return Response(serializers.OrganizationMineSerializer(orgs, many=True).data)
+
+
 class OrganizationDetailView(APIView):
     """GET /organizations/{id} -- not tied to a single FR by number, but
     required for the "Verified badge on every public page referencing
@@ -63,18 +75,33 @@ class OrganizationDetailView(APIView):
 # --------------------------------------------------------------------------
 
 
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import AllowAny, IsAuthenticated
+
+
 class OrganizationVerificationDocumentsView(APIView):
     """POST /organizations/{id}/verification-documents -- FR-ORG-003.
-    Not yet in Doc 04; add it. Restricted to an Organizer scoped to this
-    org (HasScopedRole checks apps.accounts.RoleAssignment, never a token
-    claim, per Design Spec Sec 4.3); services.py re-checks the same thing
-    for defense-in-depth, matching the pattern already used for
-    is_platform_admin checks elsewhere in this codebase."""
+    GET /organizations/{id}/verification-documents -- view submitted verification evidence.
+    """
 
     required_roles = ["organizer"]
     scope_type = "organization"
     scope_url_kwarg = "id"
-    permission_classes = [HasScopedRole]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [IsAuthenticated()]
+        return [HasScopedRole()]
+
+    @extend_schema(responses={200: serializers.OrgVerificationDocumentSerializer(many=True)})
+    def get(self, request, id):
+        org = services.get_organization(organization_id=id)
+        is_admin = getattr(request.user, "is_platform_admin", False)
+        is_org = services._is_organizer_of(actor=request.user, organization=org)
+        if not (is_admin or is_org):
+            raise PermissionDenied("You do not have permission to view these verification documents.")
+        docs = org.verification_documents.all().order_by("-created_at")
+        return Response(serializers.OrgVerificationDocumentSerializer(docs, many=True).data)
 
     @extend_schema(
         request=serializers.SubmitVerificationDocumentsSerializer,
@@ -90,6 +117,7 @@ class OrganizationVerificationDocumentsView(APIView):
         )
         body = serializers.OrgVerificationDocumentSerializer(documents, many=True).data
         return Response(body, status=status.HTTP_201_CREATED)
+
 
 
 class OrganizationVerificationReviewView(APIView):

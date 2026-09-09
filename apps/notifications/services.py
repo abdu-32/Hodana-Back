@@ -321,20 +321,31 @@ def notify_judging_results_published(hackathon):
 
 # ---- Organizer-authored announcement (Doc 04 POST /notifications) ----------
 
-def create_announcement(*, actor, hackathon_id, message, channel="email"):
+def create_announcement(*, actor, hackathon_id, message, channel=None, channels=None):
     """POST /notifications -- Doc 04's `createNotification`. An Organizer
     of the hackathon's host organization broadcasts an announcement to
-    every actively registered participant, over a single channel picked
-    by the caller (Doc 04's NotificationCreateRequest.channel is one of
-    email/in_portal -- sms is intentionally not offered here, since it's
-    reserved by FR-NOTIFY-002 for the two named system events, not
-    organizer-authored broadcasts).
+    every actively registered participant over in_portal and/or email.
     """
     from apps.registrations.models import Registration
 
     hackathon = _get_hackathon_or_404(hackathon_id)
     if not _is_organizer_of_hackathon(actor=actor, hackathon=hackathon):
         raise PermissionDenied("Only an Organizer of this hackathon can post an announcement.")
+
+    # Determine delivery channels
+    resolved_channels = []
+    if channels:
+        for c in channels:
+            c_norm = str(c).lower().replace("in_app", "in_portal")
+            if c_norm in ("email", "in_portal") and c_norm not in resolved_channels:
+                resolved_channels.append(c_norm)
+    elif channel:
+        c_norm = str(channel).lower().replace("in_app", "in_portal")
+        if c_norm in ("email", "in_portal"):
+            resolved_channels.append(c_norm)
+
+    if not resolved_channels:
+        resolved_channels = ["in_portal", "email"]
 
     recipients = [
         r.user for r in
@@ -346,12 +357,10 @@ def create_announcement(*, actor, hackathon_id, message, channel="email"):
         recipients=recipients,
         subject=f"Announcement: {hackathon.title}",
         message=message,
-        channels=(channel,),
+        channels=tuple(resolved_channels),
     )
-    # Doc 04's Notification schema describes a single created resource,
-    # not a list -- channels=(channel,) above guarantees exactly one.
     return notifications[0] if notifications else Notification.objects.create(
-        hackathon=hackathon, message=message, channel=channel,
+        hackathon=hackathon, message=message, channel=resolved_channels[0],
     )
 
 
@@ -389,6 +398,15 @@ def mark_notification_read(*, actor, delivery_id):
         delivery.read_at = timezone.now()
         delivery.save(update_fields=["read_at"])
     return delivery
+
+
+def mark_all_notifications_read(*, actor):
+    """Marks all unread in-portal notifications for the actor as read."""
+    now = timezone.now()
+    count = NotificationDelivery.objects.filter(
+        user=actor, channel="in_portal", read_at__isnull=True,
+    ).update(read_at=now)
+    return count
 
 
 def purge_expired_in_app_notifications(*, now=None):

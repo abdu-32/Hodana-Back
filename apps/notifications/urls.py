@@ -12,5 +12,6 @@ app_name = "notifications"
 urlpatterns = [
     path("", views.NotificationCreateView.as_view(), name="create"),
     path("me", views.MyNotificationsView.as_view(), name="my-notifications"),
+    path("me/read-all", views.NotificationMarkAllReadView.as_view(), name="mark-all-read"),
     path("me/<uuid:delivery_id>/read", views.NotificationMarkReadView.as_view(), name="mark-read"),
 ]

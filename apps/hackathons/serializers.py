@@ -33,7 +33,13 @@ class HackathonSerializer(serializers.ModelSerializer):
     submissionOpensAt = serializers.DateTimeField(source="submission_opens_at", read_only=True)
     submissionClosesAt = serializers.DateTimeField(source="submission_closes_at", read_only=True)
     prizeInfo = serializers.CharField(source="prize_info", read_only=True, allow_blank=True)
+    totalPrizeBudget = serializers.DecimalField(source="total_prize_budget", max_digits=12, decimal_places=2, read_only=True)
+    prizeDistribution = serializers.JSONField(source="prize_distribution", read_only=True, allow_null=True)
     locationMode = serializers.CharField(source="location_mode", read_only=True)
+    locationName = serializers.CharField(source="location_name", read_only=True)
+    venue = serializers.CharField(read_only=True)
+    field = serializers.CharField(read_only=True)
+    openTo = serializers.ListField(source="open_to", child=serializers.CharField(), read_only=True)
     eligibilityRules = serializers.JSONField(source="eligibility_rules", read_only=True, allow_null=True)
     showcasePublishedAt = serializers.DateTimeField(source="showcase_published_at", read_only=True, allow_null=True)
     createdByUserId = serializers.UUIDField(source="created_by_id", read_only=True)
@@ -46,7 +52,7 @@ class HackathonSerializer(serializers.ModelSerializer):
         fields = [
             "id", "title", "description", "hostOrgId", "slug", "bannerUrl",
             "registrationOpensAt", "registrationClosesAt", "submissionOpensAt", "submissionClosesAt",
-            "rules", "prizeInfo", "locationMode", "eligibilityRules", "tags", "status",
+            "rules", "prizeInfo", "totalPrizeBudget", "prizeDistribution", "locationMode", "locationName", "venue", "field", "openTo", "eligibilityRules", "tags", "status",
             "showcasePublishedAt", "createdByUserId", "createdAt", "updatedAt", "isSuspended", 
         ]
 
@@ -60,7 +66,7 @@ class HackathonCreateSerializer(serializers.Serializer):
 
     title = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True, default="")
-    hostOrgId = serializers.UUIDField(source="host_org_id")
+    hostOrgId = serializers.UUIDField(source="host_org_id", required=False, allow_null=True, default=None)
     slug = serializers.SlugField(max_length=255, required=False, allow_blank=True, allow_null=True)
     bannerUrl = serializers.CharField(source="banner_url", required=False, allow_blank=True, default="")
     registrationOpensAt = serializers.DateTimeField(source="registration_opens_at")
@@ -69,11 +75,22 @@ class HackathonCreateSerializer(serializers.Serializer):
     submissionClosesAt = serializers.DateTimeField(source="submission_closes_at")
     rules = serializers.CharField(required=False, allow_blank=True, default="")
     prizeInfo = serializers.CharField(source="prize_info", required=False, allow_blank=True, default="")
+    totalPrizeBudget = serializers.DecimalField(
+        source="total_prize_budget", max_digits=12, decimal_places=2, min_value=0, required=False, default=0.00
+    )
+    prizeDistribution = serializers.JSONField(source="prize_distribution", required=False, allow_null=True)
     locationMode = serializers.ChoiceField(
         source="location_mode", choices=LOCATION_MODE_CHOICES, required=False, default="online",
     )
+    locationName = serializers.CharField(source="location_name", required=False, allow_blank=True, default="")
+    venue = serializers.CharField(required=False, allow_blank=True, default="")
+    field = serializers.CharField(required=False, allow_blank=True, default="Technology")
+    openTo = serializers.ListField(
+        source="open_to", child=serializers.CharField(), required=False, default=list,
+    )
     eligibilityRules = serializers.JSONField(source="eligibility_rules", required=False, allow_null=True)
     tags = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    status = serializers.ChoiceField(choices=["draft", "published"], required=False, default="draft")
 
 
 class HackathonUpdateSerializer(serializers.Serializer):
@@ -91,6 +108,19 @@ class HackathonUpdateSerializer(serializers.Serializer):
     submissionClosesAt = serializers.DateTimeField(source="submission_closes_at", required=False)
     rules = serializers.CharField(required=False, allow_blank=True)
     prizeInfo = serializers.CharField(source="prize_info", required=False, allow_blank=True)
+    totalPrizeBudget = serializers.DecimalField(
+        source="total_prize_budget", max_digits=12, decimal_places=2, min_value=0, required=False
+    )
+    prizeDistribution = serializers.JSONField(source="prize_distribution", required=False, allow_null=True)
+    locationMode = serializers.ChoiceField(
+        source="location_mode", choices=LOCATION_MODE_CHOICES, required=False
+    )
+    locationName = serializers.CharField(source="location_name", required=False, allow_blank=True)
+    venue = serializers.CharField(required=False, allow_blank=True)
+    field = serializers.CharField(required=False, allow_blank=True)
+    openTo = serializers.ListField(
+        source="open_to", child=serializers.CharField(), required=False
+    )
     eligibilityRules = serializers.JSONField(source="eligibility_rules", required=False, allow_null=True)
     tags = serializers.ListField(child=serializers.CharField(), required=False)
     # Doc 04 only enumerates draft/published; archived added per

@@ -44,6 +44,41 @@ class OrganizationSerializer(serializers.ModelSerializer):
         ]
 
 
+class OrganizationMineSerializer(serializers.ModelSerializer):
+    contactEmail = serializers.EmailField(source="contact_email", read_only=True)
+    primaryEmailDomain = serializers.CharField(
+        source="primary_email_domain", read_only=True, allow_null=True
+    )
+    verificationStatus = serializers.CharField(source="verification_status", read_only=True)
+    verifiedAt = serializers.DateTimeField(source="verified_at", read_only=True)
+    domainFastTracked = serializers.BooleanField(source="domain_fast_tracked", read_only=True)
+    isSuspended = serializers.BooleanField(source="is_suspended", read_only=True)
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    latestReview = serializers.SerializerMethodField()
+    documentsCount = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Organization
+        fields = [
+            "id", "name", "type", "contactEmail", "primaryEmailDomain",
+            "verificationStatus", "verifiedAt", "domainFastTracked", "isSuspended",
+            "createdAt", "latestReview", "documentsCount",
+        ]
+
+    def get_latestReview(self, obj):
+        review = obj.verification_reviews.order_by("-reviewed_at").first()
+        if not review:
+            return None
+        return {
+            "decision": review.decision,
+            "rejectionReason": review.rejection_reason,
+            "reviewedAt": review.reviewed_at.isoformat() if review.reviewed_at else None,
+        }
+
+    def get_documentsCount(self, obj):
+        return obj.verification_documents.count()
+
+
 class RegisterOrganizationSerializer(serializers.Serializer):
     """POST /organizations request body -- FR-ORG-001."""
 
@@ -53,6 +88,15 @@ class RegisterOrganizationSerializer(serializers.Serializer):
     primaryEmailDomain = serializers.CharField(
         source="primary_email_domain", required=False, allow_blank=True, allow_null=True
     )
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            data = data.copy()
+            if "contact_email" in data and "contactEmail" not in data:
+                data["contactEmail"] = data["contact_email"]
+            if "primary_email_domain" in data and "primaryEmailDomain" not in data:
+                data["primaryEmailDomain"] = data["primary_email_domain"]
+        return super().to_internal_value(data)
 
 
 # --------------------------------------------------------------------------
@@ -107,13 +151,33 @@ class ReviewOrganizationVerificationSerializer(serializers.Serializer):
     """POST /organizations/{id}/verification-review -- FR-ORG-003.
     Not yet in Doc 04; add it there."""
 
-    decision = serializers.ChoiceField(choices=["approved", "rejected"])
+    decision = serializers.CharField(max_length=50)
     rejectionReason = serializers.CharField(
         source="rejection_reason", required=False, allow_blank=True, allow_null=True
     )
 
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            data = data.copy()
+            if "rejection_reason" in data and "rejectionReason" not in data:
+                data["rejectionReason"] = data["rejection_reason"]
+            elif "notes" in data and "rejectionReason" not in data:
+                data["rejectionReason"] = data["notes"]
+            if "status" in data and "decision" not in data:
+                data["decision"] = str(data["status"]).lower()
+            if "decision" in data:
+                d = str(data["decision"]).lower().strip()
+                if d in ("approved", "approve", "verified"):
+                    data["decision"] = "approved"
+                elif d in ("rejected", "reject"):
+                    data["decision"] = "rejected"
+        return super().to_internal_value(data)
+
     def validate(self, attrs):
-        if attrs.get("decision") == "rejected" and not attrs.get("rejection_reason"):
+        decision = attrs.get("decision")
+        if decision not in ("approved", "rejected"):
+            raise serializers.ValidationError({"decision": "Must be 'approved' or 'rejected'."})
+        if decision == "rejected" and not attrs.get("rejection_reason"):
             raise serializers.ValidationError(
                 {"rejectionReason": "Required when decision is 'rejected'."}
             )

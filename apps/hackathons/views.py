@@ -3,13 +3,15 @@ HTTP concerns only: routing to a service call, permission checks, and
 response status codes. No business logic here (Design Spec Sec 3.1).
 """
 
+from django.http import HttpResponse
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import serializers, services
+
 
 
 def _pagination_params(request):
@@ -33,18 +35,27 @@ class HackathonListCreateView(APIView):
 
     def get_permissions(self):
         if self.request.method == "GET":
+            if self.request.query_params.get("managed") in ("true", "1", "True"):
+                return [IsAuthenticated()]
             return [AllowAny()]
         return super().get_permissions()
 
     @extend_schema(responses={200: serializers.PaginatedHackathonsSerializer})
     def get(self, request):
         limit, offset = _pagination_params(request)
+        managed_only = request.query_params.get("managed") in ("true", "1", "True")
         results, total = services.list_hackathons(
             keyword=request.query_params.get("keyword"),
             tag=request.query_params.get("tag"),
             mode=request.query_params.get("mode"),
             status=request.query_params.get("status"),
+            field=request.query_params.get("field"),
+            open_to=request.query_params.get("openTo") or request.query_params.get("open_to"),
+            location=request.query_params.get("location"),
             limit=limit, offset=offset,
+            requester=request.user if request.user.is_authenticated else None,
+            host_org_id=request.query_params.get("hostOrgId"),
+            managed_only=managed_only,
         )
         body = {
             "data": serializers.HackathonSerializer(results, many=True).data,
@@ -167,3 +178,61 @@ class HackathonSubmissionScreeningView(APIView):
             "meta": {"limit": limit, "offset": offset, "total": total},
         }
         return Response(body)
+
+
+class HackathonExportView(APIView):
+    """GET /api/v1/hackathons/export -- Unified Export Center endpoint for organizers.
+    
+    Supports:
+    - hackathon_id: UUID or "all"
+    - resource: "complete", "participants", "teams", "submissions", "judging", "prizes", "analytics"
+    - format: "xlsx", "csv", "pdf"
+    - contextual filters: search, status, role, city, track
+    """
+    permission_classes = [IsAuthenticated]
+
+    def perform_content_negotiation(self, request, force=False):
+        """Bypass DRF's default format-suffix renderer negotiation so ?format=xlsx/csv/pdf does not trigger 404."""
+        from rest_framework.renderers import JSONRenderer
+        return (JSONRenderer(), "application/json")
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(name="hackathonId", type=str, location=OpenApiParameter.QUERY, required=False, description="Hackathon UUID or 'all'"),
+            OpenApiParameter(name="resource", type=str, location=OpenApiParameter.QUERY, required=False, description="Resource to export: complete, participants, teams, submissions, judging, prizes, analytics"),
+            OpenApiParameter(name="format", type=str, location=OpenApiParameter.QUERY, required=False, description="File format: xlsx, csv, pdf"),
+            OpenApiParameter(name="search", type=str, location=OpenApiParameter.QUERY, required=False, description="Text search filter"),
+            OpenApiParameter(name="status", type=str, location=OpenApiParameter.QUERY, required=False, description="Status filter"),
+            OpenApiParameter(name="role", type=str, location=OpenApiParameter.QUERY, required=False, description="Role filter"),
+            OpenApiParameter(name="city", type=str, location=OpenApiParameter.QUERY, required=False, description="City/Location filter"),
+        ],
+        responses={200: None},
+    )
+    def get(self, request, id=None):
+        hackathon_id = id or request.query_params.get("hackathonId") or request.query_params.get("hackathon_id") or "all"
+        resource = request.query_params.get("resource", "complete")
+        export_format = request.query_params.get("format", "xlsx")
+
+        filters = {
+            "search": request.query_params.get("search"),
+            "status": request.query_params.get("status"),
+            "role": request.query_params.get("role"),
+            "city": request.query_params.get("city"),
+            "track": request.query_params.get("track"),
+        }
+
+        result = services.export_hackathon_data(
+            actor=request.user,
+            hackathon_id=hackathon_id,
+            resource=resource,
+            format=export_format,
+            filters=filters,
+        )
+
+        response = HttpResponse(
+            result["content"],
+            content_type=result["content_type"],
+        )
+        response["Content-Disposition"] = f'attachment; filename="{result["filename"]}"'
+        response["Access-Control-Expose-Headers"] = "Content-Disposition"
+        return response

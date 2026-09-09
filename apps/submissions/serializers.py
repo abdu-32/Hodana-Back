@@ -9,14 +9,7 @@ from .models import Submission, SubmissionTrack, SubmissionVersion
 
 
 class UpsertSubmissionSerializer(serializers.Serializer):
-    """POST /submissions/hackathons/{hackathonId} -- FR-SUB-001.
-
-    Only `title` is required here: a draft may be saved incomplete.
-    FR-SUB-003's precondition ("has all required fields (FR-SUB-001)") is
-    what actually gates the full title+description+at-least-one-of
-    {repo,demo,media} requirement, enforced in services.finalize_submission
-    -- see models.py's module docstring for the full reasoning.
-    """
+    """POST /submissions/hackathons/{hackathonId} -- FR-SUB-001."""
 
     title = serializers.CharField(max_length=255)
     tagline = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
@@ -24,12 +17,44 @@ class UpsertSubmissionSerializer(serializers.Serializer):
     technologies = serializers.ListField(
         child=serializers.CharField(max_length=100), required=False, default=list,
     )
-    # FR-SUB-002: "must be a well-formed URL" -- validated as such even
-    # though it's submitted through this create/edit endpoint rather than
-    # the media-attach one, since DB Design Sec 4.6 keeps repo_link on
-    # the same `submission` row as title/description.
     repoLink = serializers.URLField(source="repo_link", required=False, allow_blank=True, default="")
     demoVideoUrl = serializers.URLField(source="demo_video_url", required=False, allow_blank=True, default="")
+    attachmentUrls = serializers.ListField(
+        child=serializers.URLField(), source="attachment_urls", required=False, default=list,
+    )
+
+    def to_internal_value(self, data):
+        # Support snake_case keys as well
+        normalized = dict(data)
+        if "repo_link" in normalized and "repoLink" not in normalized:
+            normalized["repoLink"] = normalized["repo_link"]
+        if "demo_video_url" in normalized and "demoVideoUrl" not in normalized:
+            normalized["demoVideoUrl"] = normalized["demo_video_url"]
+        if "attachment_urls" in normalized and "attachmentUrls" not in normalized:
+            normalized["attachmentUrls"] = normalized["attachment_urls"]
+        return super().to_internal_value(normalized)
+
+
+class MyProjectSubmissionSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    hackathonId = serializers.CharField()
+    hackathonTitle = serializers.CharField()
+    hackathonCategory = serializers.CharField()
+    hackathonSlug = serializers.CharField()
+    teamId = serializers.CharField()
+    teamName = serializers.CharField()
+    title = serializers.CharField()
+    tagline = serializers.CharField(allow_blank=True)
+    description = serializers.CharField(allow_blank=True)
+    technologies = serializers.ListField(child=serializers.CharField())
+    repoLink = serializers.CharField(allow_blank=True)
+    demoVideoUrl = serializers.CharField(allow_blank=True)
+    attachmentUrls = serializers.ListField(child=serializers.CharField())
+    isFinalized = serializers.BooleanField()
+    submittedAt = serializers.DateTimeField(allow_null=True)
+    createdAt = serializers.DateTimeField()
+    review = serializers.DictField(allow_null=True)
+
 
 
 class AttachMediaSerializer(serializers.Serializer):

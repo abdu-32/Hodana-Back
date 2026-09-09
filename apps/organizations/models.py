@@ -28,6 +28,7 @@ VERIFICATION_STATUS_CHOICES = [
     ("unverified", "Unverified"),
     ("pending", "Pending"),
     ("verified", "Verified"),
+    ("rejected", "Rejected"),
 ]
 
 REVIEW_DECISION_CHOICES = [

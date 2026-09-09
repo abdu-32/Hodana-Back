@@ -11,6 +11,7 @@ app_name = "organizations"
 
 urlpatterns = [
     path("", views.OrganizationListCreateView.as_view(), name="list-create"),
+    path("mine", views.OrganizationMineView.as_view(), name="mine"),
     path("<uuid:id>", views.OrganizationDetailView.as_view(), name="detail"),
     path(
         "<uuid:id>/verification-documents",

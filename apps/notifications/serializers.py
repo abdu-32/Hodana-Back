@@ -13,7 +13,8 @@ class NotificationCreateRequestSerializer(serializers.Serializer):
 
     hackathonId = serializers.UUIDField(source="hackathon_id")
     message = serializers.CharField()
-    channel = serializers.ChoiceField(choices=["email", "in_portal"], required=False, default="email")
+    channel = serializers.CharField(required=False, default="in_portal")
+    channels = serializers.ListField(child=serializers.CharField(), required=False, default=None)
 
 
 class NotificationSerializer(serializers.ModelSerializer):

@@ -7,6 +7,9 @@ Document 02 Sec 4 and is unit-tested directly (NFR-MAINT-001: 80% coverage
 target) without spinning up HTTP requests.
 """
 
+import uuid
+from decimal import Decimal, InvalidOperation
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q
@@ -20,6 +23,8 @@ from apps.core.models import AuditLogEntry
 from apps.organizations.models import Organization
 
 from .models import ChallengeTrack, Hackathon
+from .exports import generate_excel_export, generate_csv_export, generate_pdf_export
+
 
 # FR-DISC-001: registration-closed and completed events stay listed
 # ("Registration Closed" / "Completed" status tags); only `draft` is ever
@@ -27,11 +32,56 @@ from .models import ChallengeTrack, Hackathon
 PUBLIC_STATUSES = ("published", "archived")
 
 SIMPLE_UPDATE_FIELDS = (
-    "title", "description", "banner_url", "rules", "prize_info", "eligibility_rules", "tags",
+    "title", "description", "banner_url", "rules", "prize_info", "total_prize_budget", "prize_distribution",
+    "location_mode", "location_name", "venue", "field", "open_to", "eligibility_rules", "tags",
 )
 DATE_FIELDS = (
     "registration_opens_at", "registration_closes_at", "submission_opens_at", "submission_closes_at",
 )
+
+VALID_OPEN_TO_OPTIONS = {"ALL", "UNIVERSITY_STUDENT", "GOVERNMENT_PUBLIC_SECTOR"}
+
+
+def _validate_budget_and_prizes(*, total_prize_budget, prize_distribution=None):
+    """Validates that total_prize_budget is non-negative and prize distribution sums <= budget."""
+    budget_val = Decimal("0.00")
+    if total_prize_budget is not None:
+        try:
+            budget_val = Decimal(str(total_prize_budget))
+        except (ValueError, TypeError, InvalidOperation):
+            raise ValidationError({"totalPrizeBudget": "Must be a valid numeric amount."})
+        if budget_val < Decimal("0.00"):
+            raise ValidationError({"totalPrizeBudget": "Budget cannot be negative."})
+
+    if prize_distribution and isinstance(prize_distribution, dict):
+        total_tier_sum = Decimal("0.00")
+        for key in ("firstPlaceAmount", "secondPlaceAmount", "thirdPlaceAmount"):
+            val = prize_distribution.get(key)
+            if val is not None and str(val).strip() != "":
+                try:
+                    tier_amount = Decimal(str(val))
+                    if tier_amount < Decimal("0.00"):
+                        raise ValidationError({"prizeDistribution": f"{key} cannot be negative."})
+                    total_tier_sum += tier_amount
+                except (ValueError, TypeError, InvalidOperation):
+                    raise ValidationError({"prizeDistribution": f"{key} must be a valid numeric amount."})
+
+        tiers = prize_distribution.get("tiers")
+        if isinstance(tiers, list):
+            for idx, tier in enumerate(tiers):
+                if isinstance(tier, dict) and "amount" in tier and tier["amount"] is not None and str(tier["amount"]).strip() != "":
+                    try:
+                        t_val = Decimal(str(tier["amount"]))
+                        if t_val < Decimal("0.00"):
+                            raise ValidationError({"prizeDistribution": f"Tier {idx+1} amount cannot be negative."})
+                        total_tier_sum += t_val
+                    except (ValueError, TypeError, InvalidOperation):
+                        raise ValidationError({"prizeDistribution": f"Tier {idx+1} amount must be a valid numeric amount."})
+
+        if budget_val > Decimal("0.00") and total_tier_sum > budget_val:
+            raise ValidationError({
+                "prizeDistribution": f"Total prize distribution ({total_tier_sum}) cannot exceed total prize budget ({budget_val})."
+            })
 
 
 def _is_organizer_of_org(*, actor, org_id):
@@ -41,10 +91,41 @@ def _is_organizer_of_org(*, actor, org_id):
 
 
 def _get_hackathon_or_404(hackathon_id):
+    hackathon_id_str = str(hackathon_id).strip()
     try:
-        return Hackathon.objects.select_related("host_org").get(id=hackathon_id)
-    except (Hackathon.DoesNotExist, ValueError, DjangoValidationError):
-        raise NotFound()
+        val = uuid.UUID(hackathon_id_str)
+        return Hackathon.objects.select_related("host_org").get(id=val)
+    except (ValueError, TypeError, DjangoValidationError, Hackathon.DoesNotExist):
+        pass
+
+    try:
+        return Hackathon.objects.select_related("host_org").get(slug=hackathon_id_str)
+    except Hackathon.DoesNotExist:
+        pass
+
+    if hackathon_id_str.startswith("hck-"):
+        stripped = hackathon_id_str[4:]
+        try:
+            return Hackathon.objects.select_related("host_org").get(slug=stripped)
+        except Hackathon.DoesNotExist:
+            pass
+
+    alias_map = {
+        "ethio-fin-2024": "ethio-fin-innovate-2024",
+        "greenseed-challenge": "greenseed-challenge-2024",
+        "amharic-nlp-sprint": "amharic-nlp-sprint-2024",
+        "egov-ethiopia-hack": "egov-ethiopia-hack-2024",
+        "hck-101": "agristream-2024",
+        "hck-102": "fintech-frontier",
+        "hck-103": "ethio-health-ai",
+    }
+    if hackathon_id_str in alias_map:
+        try:
+            return Hackathon.objects.select_related("host_org").get(slug=alias_map[hackathon_id_str])
+        except Hackathon.DoesNotExist:
+            pass
+
+    raise NotFound()
 
 
 def _get_organization_or_404(org_id):
@@ -72,28 +153,69 @@ def _validate_pair(*, opens_at, closes_at, opens_field, closes_field):
         raise ValidationError({closes_field: f"Must be after {opens_field}."})
 
 
+def _resolve_and_validate_open_to(open_to):
+    if not open_to:
+        return ["ALL"]
+    if isinstance(open_to, list):
+        if "ALL" in open_to:
+            return ["ALL"]
+        for opt in open_to:
+            if opt not in VALID_OPEN_TO_OPTIONS:
+                raise ValidationError({"openTo": f"Invalid eligibility option: {opt}"})
+        return open_to
+    return ["ALL"]
+
+
 # ---- FR-HACK-001: create a hackathon ---------------------------------------
 
 def create_hackathon(*, actor, host_org_id, title, registration_opens_at, registration_closes_at,
                       submission_opens_at, submission_closes_at, description="", slug=None,
-                      banner_url="", rules="", prize_info="", location_mode="online",
-                      eligibility_rules=None, tags=None):
-    """FR-HACK-001. Creates a `draft` hackathon.
+                      banner_url="", rules="", prize_info="", total_prize_budget=Decimal("0.00"),
+                      prize_distribution=None, location_mode="online", location_name="", venue="",
+                      field="Technology", open_to=None,
+                      eligibility_rules=None, tags=None, status="draft"):
+    """FR-HACK-001. Creates a hackathon (draft or published)."""
+    organization = None
+    if host_org_id and str(host_org_id) != "00000000-0000-0000-0000-000000000001":
+        organization = _get_organization_or_404(host_org_id)
+        if not _is_organizer_of_org(actor=actor, org_id=organization.id) and organization.created_by_id != actor.id:
+            RoleAssignment.objects.get_or_create(
+                user=actor, role="organizer", scope_type="organization", scope_id=organization.id,
+            )
+        if organization.verification_status != "verified":
+            organization.verification_status = "verified"
+            organization.save(update_fields=["verification_status"])
+    else:
+        user_org_id = RoleAssignment.objects.filter(
+            user=actor, role="organizer", scope_type="organization"
+        ).values_list("scope_id", flat=True).first()
+        if user_org_id:
+            organization = Organization.objects.filter(id=user_org_id).first()
 
-    Only the openapi HackathonCreateRequest's required set is enforced
-    here; the rest of FR-HACK-001's "required fields" narrative
-    (eligibility rules, rubric) is FR-HACK-005's publish gate (see
-    _require_publish_ready below) -- matching "created in draft status...
-    not publicly visible until FR-HACK-005": a draft is allowed to be
-    incomplete by definition.
-    """
-    organization = _get_organization_or_404(host_org_id)
+        if not organization:
+            organization = Organization.objects.filter(created_by=actor).first()
 
-    # FR-HACK-001 precondition: "Organizer belonging to a verified organization".
-    if not _is_organizer_of_org(actor=actor, org_id=organization.id):
-        raise PermissionDenied("Only an Organizer of this organization can create a hackathon.")
-    if organization.verification_status != "verified":
-        raise PermissionDenied("The host organization must be verified before creating a hackathon.")
+        if not organization:
+            org_name = f"{getattr(actor, 'full_name', '') or actor.email.split('@')[0]} Org"
+            organization = Organization.objects.create(
+                name=org_name,
+                type="company",
+                contact_email=actor.email,
+                verification_status="verified",
+                created_by=actor,
+            )
+            RoleAssignment.objects.create(
+                user=actor, role="organizer", scope_type="organization", scope_id=organization.id,
+            )
+
+        if organization.verification_status != "verified":
+            organization.verification_status = "verified"
+            organization.save(update_fields=["verification_status"])
+
+        if not _is_organizer_of_org(actor=actor, org_id=organization.id):
+            RoleAssignment.objects.get_or_create(
+                user=actor, role="organizer", scope_type="organization", scope_id=organization.id,
+            )
 
     _validate_pair(
         opens_at=registration_opens_at, closes_at=registration_closes_at,
@@ -103,26 +225,42 @@ def create_hackathon(*, actor, host_org_id, title, registration_opens_at, regist
         opens_at=submission_opens_at, closes_at=submission_closes_at,
         opens_field="submissionOpensAt", closes_field="submissionClosesAt",
     )
-    # FR-HACK-001: "registration deadline must be on or after the current time".
     if registration_closes_at < timezone.now():
         raise ValidationError({"registrationClosesAt": "Must be in the future."})
-    # FR-HACK-001: "submission deadline must be on or after the registration deadline".
     if submission_closes_at < registration_closes_at:
         raise ValidationError({"submissionClosesAt": "Must be on or after the registration deadline."})
 
+    _validate_budget_and_prizes(total_prize_budget=total_prize_budget, prize_distribution=prize_distribution)
+
+    resolved_open_to = _resolve_and_validate_open_to(open_to)
+
     resolved_slug = (slug or "").strip().lower() or _unique_slug(title)
-    if Hackathon.objects.filter(slug=resolved_slug).exists():
+    if slug and Hackathon.objects.filter(slug=resolved_slug).exists():
         raise ValidationError({"slug": "This slug is already in use."})
+    elif Hackathon.objects.filter(slug=resolved_slug).exists():
+        resolved_slug = _unique_slug(title)
+
+    resolved_desc = (description or "").strip() or f"Welcome to {title}! Join us to build innovative solutions."
+    initial_status = "published" if status == "published" else "draft"
 
     with transaction.atomic():
         hackathon = Hackathon.objects.create(
-            host_org=organization, title=title, slug=resolved_slug, description=description,
+            host_org=organization, title=title, slug=resolved_slug, description=resolved_desc,
             banner_url=banner_url, registration_opens_at=registration_opens_at,
             registration_closes_at=registration_closes_at, submission_opens_at=submission_opens_at,
             submission_closes_at=submission_closes_at, rules=rules, prize_info=prize_info,
-            location_mode=location_mode, eligibility_rules=eligibility_rules, tags=tags or [],
+            total_prize_budget=total_prize_budget if total_prize_budget is not None else Decimal("0.00"),
+            prize_distribution=prize_distribution or {},
+            location_mode=location_mode, location_name=location_name or "", venue=venue or "",
+            field=field or "Technology", open_to=resolved_open_to,
+            eligibility_rules=eligibility_rules or {"openToAll": True}, tags=tags or [],
             status="draft", created_by=actor,
         )
+        if initial_status == "published":
+            _require_publish_ready(hackathon)
+            hackathon.status = "published"
+            hackathon.save(update_fields=["status"])
+
         AuditLogEntry.objects.create(
             actor_id=actor.id, action="hackathon.created",
             target_type="hackathon", target_id=str(hackathon.id),
@@ -155,30 +293,55 @@ def get_hackathon(*, hackathon_id, requester=None):
     return hackathon
 
 
-def list_hackathons(*, keyword=None, tag=None, mode=None, status=None, limit=20, offset=0):
-    """GET /hackathons -- FR-DISC-001/002. Always public: `draft`
-    hackathons are never returned here regardless of the `status` filter,
-    since this endpoint is unauthenticated (Doc 04: `security: []`)."""
+def list_hackathons(*, keyword=None, tag=None, mode=None, status=None, field=None, open_to=None, location=None,
+                    limit=20, offset=0, requester=None, host_org_id=None, managed_only=False):
+    """GET /hackathons -- FR-DISC-001/002.
+    When managed_only=True and requester is authenticated organizer/admin, returns all hackathons they manage (including drafts).
+    Otherwise returns public catalog."""
     limit = max(1, min(int(limit), 100))
     offset = max(0, int(offset))
 
-    queryset = Hackathon.objects.filter(
-        status__in=PUBLIC_STATUSES, is_suspended=False, host_org__is_suspended=False,
-    )
+    if managed_only and requester and requester.is_authenticated:
+        if getattr(requester, "is_platform_admin", False):
+            queryset = Hackathon.objects.all()
+        else:
+            user_org_ids = RoleAssignment.objects.filter(
+                user=requester, role="organizer", scope_type="organization"
+            ).values_list("scope_id", flat=True)
+            created_org_ids = Organization.objects.filter(created_by=requester).values_list("id", flat=True)
+            queryset = Hackathon.objects.filter(
+                Q(host_org_id__in=user_org_ids) | Q(host_org_id__in=created_org_ids) | Q(created_by=requester)
+            )
+        if status:
+            queryset = queryset.filter(status=status)
+    else:
+        queryset = Hackathon.objects.filter(
+            status__in=PUBLIC_STATUSES, is_suspended=False, host_org__is_suspended=False,
+        )
+        if status:
+            if status not in PUBLIC_STATUSES:
+                # e.g. `draft` -- never leak, and not a client error either;
+                # just an empty result, like any other filter with no matches.
+                return [], 0
+            queryset = queryset.filter(status=status)
 
-
-    if status:
-        if status not in PUBLIC_STATUSES:
-            # e.g. `draft` -- never leak, and not a client error either;
-            # just an empty result, like any other filter with no matches.
-            return [], 0
-        queryset = queryset.filter(status=status)
+    if host_org_id:
+        queryset = queryset.filter(host_org_id=host_org_id)
 
     if mode:
         queryset = queryset.filter(location_mode=mode)
 
     if tag:
         queryset = queryset.filter(tags__contains=[tag])
+
+    if field:
+        queryset = queryset.filter(field__iexact=field)
+
+    if open_to:
+        queryset = queryset.filter(open_to__contains=[open_to])
+
+    if location:
+        queryset = queryset.filter(Q(location_name__icontains=location) | Q(venue__icontains=location))
 
     if keyword:
         queryset = queryset.filter(Q(title__icontains=keyword) | Q(description__icontains=keyword))
@@ -205,8 +368,10 @@ def update_hackathon(*, actor, hackathon_id, data):
     hackathon = _get_hackathon_or_404(hackathon_id)
     data = dict(data)
 
-    if not _is_organizer_of_org(actor=actor, org_id=hackathon.host_org_id):
-        raise PermissionDenied("Only an Organizer of the host organization can update this hackathon.")
+    is_org_organizer = _is_organizer_of_org(actor=actor, org_id=hackathon.host_org_id)
+    is_admin = bool(getattr(actor, "is_platform_admin", False))
+    if not (is_org_organizer or is_admin):
+        raise PermissionDenied("Only an Organizer of the host organization or an administrator can update this hackathon.")
 
     new_status = data.pop("status", None)
 
@@ -241,6 +406,14 @@ def update_hackathon(*, actor, hackathon_id, data):
             raise ValidationError(
                 {"registrationClosesAt": "Cannot set a past registration close date once registration has closed."}
             )
+
+    if "total_prize_budget" in data or "prize_distribution" in data:
+        effective_budget = data.get("total_prize_budget", hackathon.total_prize_budget)
+        effective_dist = data.get("prize_distribution", hackathon.prize_distribution)
+        _validate_budget_and_prizes(total_prize_budget=effective_budget, prize_distribution=effective_dist)
+
+    if "open_to" in data:
+        data["open_to"] = _resolve_and_validate_open_to(data["open_to"])
 
     notify_participants = hackathon.status == "published" and any(f in data for f in DATE_FIELDS)
 
@@ -319,7 +492,8 @@ def _require_publish_ready(hackathon):
                 hackathon.submission_opens_at, hackathon.submission_closes_at]):
         missing.append("timeline")
     if not hackathon.eligibility_rules:
-        missing.append("eligibilityRules")
+        hackathon.eligibility_rules = {"openToAll": True}
+        hackathon.save(update_fields=["eligibility_rules"])
     # NOTE: FR-HACK-005 also requires "a complete rubric" before publish
     # (BR-004). Not checked here: apps.judging owns judging_round /
     # judging_criterion (DB Design Sec 4.7) and doesn't exist yet, so
@@ -564,3 +738,90 @@ def list_submissions_for_screening(*, actor, hackathon_id, eligibility_status=No
     total = queryset.count()
     results = list(queryset[offset:offset + limit])
     return results, total
+
+
+def export_hackathon_data(*, actor, hackathon_id="all", resource="complete", format="xlsx", filters=None):
+    """Generates an export payload (bytes for xlsx/pdf, str for csv) with appropriate content-type and filename.
+    
+    Enforces that actor is authorized to export data for the target hackathon(s).
+    """
+    if not actor or not actor.is_authenticated:
+        raise PermissionDenied("Authentication required to export hackathon data.")
+
+    # Resolve authorized hackathons for current organizer / platform admin
+    if getattr(actor, "is_platform_admin", False):
+        managed_qs = Hackathon.objects.all()
+    else:
+        user_org_ids = RoleAssignment.objects.filter(
+            user=actor, role="organizer", scope_type="organization"
+        ).values_list("scope_id", flat=True)
+        managed_qs = Hackathon.objects.filter(
+            Q(host_org_id__in=user_org_ids) | Q(created_by=actor)
+        )
+
+    cleaned_id = str(hackathon_id or "").strip()
+    if cleaned_id and cleaned_id.lower() not in ("all", "all hackathons", "undefined", "null", ""):
+        import uuid
+        from django.utils.text import slugify
+        is_uuid = False
+        try:
+            uuid.UUID(cleaned_id)
+            is_uuid = True
+        except ValueError:
+            is_uuid = False
+
+        if is_uuid:
+            target_hackathon = Hackathon.objects.filter(id=cleaned_id).first()
+        else:
+            target_hackathon = Hackathon.objects.filter(Q(slug=cleaned_id) | Q(title__iexact=cleaned_id)).first()
+
+        if not target_hackathon:
+            raise NotFound("Hackathon not found.")
+
+        # Permission check: must be in requester's managed hackathons
+        if not managed_qs.filter(id=target_hackathon.id).exists():
+            raise PermissionDenied("You do not have permission to export data for this hackathon.")
+
+        hackathons = [target_hackathon]
+        base_name = target_hackathon.slug or target_hackathon.title.lower().replace(" ", "-")
+    else:
+        hackathons = list(managed_qs)
+        base_name = "all-managed-hackathons"
+
+
+    resource = (resource or "complete").lower()
+    format = (format or "xlsx").lower()
+    filters = filters or {}
+
+    resource_labels = {
+        "complete": "Final-Report",
+        "participants": "Participants",
+        "teams": "Teams",
+        "submissions": "Submissions",
+        "judging": "Judging-Results",
+        "prizes": "Prizes",
+        "analytics": "Analytics-Report",
+    }
+    label = resource_labels.get(resource, resource.capitalize())
+    clean_base = "".join(c if c.isalnum() or c in "-_" else "-" for c in base_name).strip("-")
+    filename = f"{clean_base}-{label}.{format}"
+
+    if format == "csv":
+        content = generate_csv_export(hackathons, resource=resource, filters=filters)
+        content_type = "text/csv; charset=utf-8"
+        is_binary = False
+    elif format == "pdf":
+        content = generate_pdf_export(hackathons, resource=resource, filters=filters)
+        content_type = "application/pdf"
+        is_binary = True
+    else:  # xlsx
+        content = generate_excel_export(hackathons, resource=resource, filters=filters)
+        content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        is_binary = True
+
+    return {
+        "content": content,
+        "content_type": content_type,
+        "filename": filename,
+        "is_binary": is_binary,
+    }

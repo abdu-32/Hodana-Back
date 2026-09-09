@@ -71,3 +71,12 @@ class NotificationMarkReadView(APIView):
     def post(self, request, delivery_id):
         delivery = services.mark_notification_read(actor=request.user, delivery_id=delivery_id)
         return Response(serializers.NotificationDeliverySerializer(delivery).data)
+
+
+class NotificationMarkAllReadView(APIView):
+    """POST /notifications/me/read-all -- mark all unread notifications as read."""
+
+    @extend_schema(request=None, responses={200: serializers.NotificationDeliverySerializer(many=True)})
+    def post(self, request):
+        count = services.mark_all_notifications_read(actor=request.user)
+        return Response({"success": True, "count": count})

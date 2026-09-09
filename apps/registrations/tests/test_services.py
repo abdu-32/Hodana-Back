@@ -303,6 +303,40 @@ class TestRegisterForHackathon:
             services.register_for_hackathon(actor=wrong_country, hackathon_id=published_hackathon.id)
         assert exc_info.value.detail["eligibility"]["rule"] == "geographic_restriction"
 
+    def test_open_to_university_students_allows_student_and_blocks_non_student(self, published_hackathon):
+        published_hackathon.open_to = ["UNIVERSITY_STUDENT"]
+        published_hackathon.save(update_fields=["open_to"])
+
+        student = AccountFactory(university="Addis Ababa University")
+        reg = services.register_for_hackathon(actor=student, hackathon_id=published_hackathon.id)
+        assert reg.status == "registered"
+
+        non_student = AccountFactory(university="")
+        with pytest.raises(ValidationError) as exc_info:
+            services.register_for_hackathon(actor=non_student, hackathon_id=published_hackathon.id)
+        assert exc_info.value.detail["eligibility"]["rule"] == "open_to"
+
+    def test_open_to_government_allows_gov_role_and_blocks_others(self, published_hackathon):
+        published_hackathon.open_to = ["GOVERNMENT_PUBLIC_SECTOR"]
+        published_hackathon.save(update_fields=["open_to"])
+
+        gov_user = AccountFactory()
+        reg = services.register_for_hackathon(
+            actor=gov_user,
+            hackathon_id=published_hackathon.id,
+            custom_answers={"personalInfo": {"role": "Government / Public Sector", "organization": "Ministry of Innovation"}},
+        )
+        assert reg.status == "registered"
+
+        outsider = AccountFactory()
+        with pytest.raises(ValidationError) as exc_info:
+            services.register_for_hackathon(
+                actor=outsider,
+                hackathon_id=published_hackathon.id,
+                custom_answers={"personalInfo": {"role": "Software Engineer", "organization": "Private Company"}},
+            )
+        assert exc_info.value.detail["eligibility"]["rule"] == "open_to"
+
 
 # ---------------------------------------------------------------------------
 # FR-REG-002: withdraw registration

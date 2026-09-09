@@ -76,7 +76,13 @@ class Hackathon(TimeStampedModel):
 
     rules = models.TextField(blank=True)
     prize_info = models.TextField(blank=True)
+    total_prize_budget = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    prize_distribution = models.JSONField(default=dict, blank=True, null=True)
     location_mode = models.CharField(max_length=20, choices=LOCATION_MODE_CHOICES, default="online")
+    location_name = models.CharField(max_length=255, blank=True, default="")
+    venue = models.CharField(max_length=255, blank=True, default="")
+    field = models.CharField(max_length=100, blank=True, default="Technology")
+    open_to = ArrayField(models.CharField(max_length=50), default=list, blank=True)
 
     # FR-HACK-003; structure/required-non-null-before-publish (BR-004)
     # validated in services.py, not here (Design Spec Sec 3.1).

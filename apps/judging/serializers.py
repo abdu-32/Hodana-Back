@@ -54,11 +54,20 @@ class JudgingCriterionSerializer(serializers.ModelSerializer):
 
 class JudgeInvitationCreateSerializer(serializers.Serializer):
     email = serializers.EmailField()
-    roundId = serializers.UUIDField(source="round_id")
+    roundId = serializers.UUIDField(source="round_id", required=False, allow_null=True)
+    hackathonId = serializers.UUIDField(source="hackathon_id", required=False, allow_null=True)
+    note = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if not attrs.get("round_id") and not attrs.get("hackathon_id"):
+            raise serializers.ValidationError("Either roundId or hackathonId must be provided.")
+        return attrs
 
 
 class JudgeInvitationSerializer(serializers.ModelSerializer):
     roundId = serializers.UUIDField(source="round_id", read_only=True)
+    hackathonId = serializers.SerializerMethodField()
+    hackathonTitle = serializers.SerializerMethodField()
     invitedAt = serializers.DateTimeField(source="invited_at", read_only=True)
     respondedAt = serializers.DateTimeField(
         source="responded_at", read_only=True, allow_null=True,
@@ -66,7 +75,90 @@ class JudgeInvitationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = JudgeInvitation
-        fields = ["id", "email", "roundId", "status", "invitedAt", "respondedAt"]
+        fields = ["id", "email", "roundId", "hackathonId", "hackathonTitle", "status", "note", "invitedAt", "respondedAt"]
+
+    def get_hackathonId(self, obj):
+        return str(obj.round.hackathon_id) if obj.round and obj.round.hackathon_id else ""
+
+    def get_hackathonTitle(self, obj):
+        return obj.round.hackathon.title if obj.round and obj.round.hackathon else ""
+
+
+class JudgeInvitationDetailSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    email = serializers.EmailField()
+    hackathonId = serializers.SerializerMethodField()
+    hackathonTitle = serializers.SerializerMethodField()
+    hostOrgName = serializers.SerializerMethodField()
+    status = serializers.CharField()
+    note = serializers.CharField()
+    invitedAt = serializers.DateTimeField(source="invited_at")
+    respondedAt = serializers.DateTimeField(source="responded_at", allow_null=True)
+
+    def get_hackathonId(self, obj):
+        return str(obj.round.hackathon_id) if obj.round and obj.round.hackathon_id else ""
+
+    def get_hackathonTitle(self, obj):
+        return obj.round.hackathon.title if obj.round and obj.round.hackathon else ""
+
+    def get_hostOrgName(self, obj):
+        if obj.round and obj.round.hackathon and obj.round.hackathon.host_org:
+            return obj.round.hackathon.host_org.name
+        return "Event Organizer"
+
+
+class OrganizerJudgeItemSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    email = serializers.CharField()
+    name = serializers.CharField()
+    hackathonId = serializers.CharField()
+    hackathonTitle = serializers.CharField()
+    status = serializers.CharField()
+    note = serializers.CharField(allow_blank=True)
+    invitedAt = serializers.CharField(allow_null=True)
+    respondedAt = serializers.CharField(allow_null=True)
+    assignmentsCount = serializers.IntegerField()
+    scoredCount = serializers.IntegerField()
+
+
+class JudgeAssignedHackathonSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    title = serializers.CharField()
+    slug = serializers.CharField()
+    organizerName = serializers.CharField()
+    deadline = serializers.CharField()
+    totalSubmissions = serializers.IntegerField()
+    evaluatedSubmissions = serializers.IntegerField()
+    category = serializers.CharField()
+    bannerImage = serializers.CharField()
+
+
+class JudgeSubmissionSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    teamId = serializers.CharField()
+    teamName = serializers.CharField()
+    teamMembersCount = serializers.IntegerField()
+    projectTitle = serializers.CharField()
+    description = serializers.CharField()
+    tagline = serializers.CharField()
+    category = serializers.CharField()
+    hackathonId = serializers.CharField()
+    hackathonName = serializers.CharField()
+    repoUrl = serializers.CharField(allow_blank=True)
+    demoUrl = serializers.CharField(allow_blank=True)
+    videoUrl = serializers.CharField(allow_blank=True)
+    pitchDeckUrl = serializers.CharField(allow_blank=True)
+    techStack = serializers.ListField(child=serializers.CharField())
+    evaluationStatus = serializers.CharField()
+    myEvaluation = serializers.DictField(allow_null=True, required=False)
+
+
+class JudgeEvaluationSubmitSerializer(serializers.Serializer):
+    hackathonId = serializers.UUIDField(source="hackathon_id", required=False, allow_null=True)
+    criteriaScores = serializers.DictField(source="criteria_scores", child=serializers.FloatField())
+    feedback = serializers.CharField(required=False, allow_blank=True, default="")
+    status = serializers.ChoiceField(choices=["draft", "final"], required=False, default="final")
+
 
 
 class ScoreCreateSerializer(serializers.Serializer):

@@ -46,6 +46,17 @@ class MyHackathonSubmissionView(APIView):
         return Response(serializers.SubmissionSerializer(submission).data)
 
 
+class MySubmissionsListView(APIView):
+    """GET /submissions/mine -- Returns all submitted projects for the authenticated
+    user across hackathons, enriched with judge reviews, scores, and category info."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        results = services.list_my_submitted_projects(actor=request.user)
+        return Response(results, status=status.HTTP_200_OK)
+
+
 class SubmissionDetailView(APIView):
     """GET /submissions/{submission_id} -- visible to team members and
     the hackathon's Organizer only (services._require_team_member_or_organizer)."""
@@ -170,3 +181,145 @@ class SubmissionTrackView(APIView):
         )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class OrganizerSubmissionsListView(APIView):
+    """GET /submissions/organizer -- Returns all submissions for hackathons managed
+    by the authenticated organizer, enriched with judge evaluation scores, team info,
+    and winner ranks."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        hackathon_id = request.query_params.get("hackathonId")
+        min_score = request.query_params.get("minScore")
+        category = request.query_params.get("category")
+
+        results = services.list_organizer_submissions(
+            actor=request.user,
+            hackathon_id=hackathon_id,
+            min_score=float(min_score) if min_score else 0.0,
+            category=category,
+        )
+        return Response(results, status=status.HTTP_200_OK)
+
+
+class OrganizerAssignWinnerView(APIView):
+    """POST /submissions/organizer/winner -- Assigns winner rank (FIRST, SECOND, THIRD, NONE)
+    and optional winner notes to a submission."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        submission_id = request.data.get("submissionId")
+        rank = request.data.get("rank", "NONE")
+        notes = request.data.get("winnerNotes", "")
+        if not submission_id:
+            return Response(
+                {"submissionId": ["submissionId is required"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        res = services.assign_submission_winner(
+            actor=request.user,
+            submission_id=submission_id,
+            rank=rank,
+            winner_notes=notes,
+        )
+        return Response(res, status=status.HTTP_200_OK)
+
+
+class OrganizerRequestPayoutView(APIView):
+    """POST /submissions/organizer/request-payout -- Requests a winning team
+    to submit their payment method details."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        submission_id = request.data.get("submissionId")
+        message = request.data.get("message", "")
+        if not submission_id:
+            return Response(
+                {"submissionId": ["submissionId is required"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        res = services.request_submission_payout(
+            actor=request.user,
+            submission_id=submission_id,
+            message=message,
+        )
+        return Response(res, status=status.HTTP_200_OK)
+
+
+class OrganizerRequestTop3PayoutView(APIView):
+    """POST /submissions/organizer/request-top-3-payouts -- Triggers payment form
+    requests for all Top 3 winners of a hackathon."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        hackathon_id = request.data.get("hackathonId")
+        message = request.data.get("message", "")
+        if not hackathon_id:
+            return Response(
+                {"hackathonId": ["hackathonId is required"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        res = services.request_top_3_payouts(
+            actor=request.user,
+            hackathon_id=hackathon_id,
+            message=message,
+        )
+        return Response(res, status=status.HTTP_200_OK)
+
+
+class OrganizerMarkPayoutPaidView(APIView):
+    """POST /submissions/organizer/mark-payout-paid -- Marks prize payout as disbursed."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        submission_id = request.data.get("submissionId")
+        transaction_ref = request.data.get("transactionRef", "")
+        if not submission_id:
+            return Response(
+                {"submissionId": ["submissionId is required"]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        res = services.mark_submission_payout_paid(
+            actor=request.user,
+            submission_id=submission_id,
+            transaction_ref=transaction_ref,
+        )
+        return Response(res, status=status.HTTP_200_OK)
+
+
+class ParticipantSubmitPayoutDetailsView(APIView):
+    """POST /submissions/{submission_id}/payout-details -- Winning participant submits
+    their payment method details (CBE Bank, Telebirr, etc.)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, submission_id):
+        beneficiary_name = request.data.get("beneficiaryName", "")
+        provider = request.data.get("provider", "")
+        account_number = request.data.get("accountNumber", "")
+        phone = request.data.get("phone", "")
+        notes = request.data.get("notes", "")
+
+        if not beneficiary_name or not provider or not account_number:
+            return Response(
+                {"error": "beneficiaryName, provider, and accountNumber are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        res = services.submit_payout_details(
+            actor=request.user,
+            submission_id=submission_id,
+            beneficiary_name=beneficiary_name,
+            provider=provider,
+            account_number=account_number,
+            phone=phone,
+            notes=notes,
+        )
+        return Response(res, status=status.HTTP_200_OK)
+
