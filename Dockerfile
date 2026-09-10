@@ -15,7 +15,7 @@ RUN sed -i 's|http://|https://|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get install -y --no-install-recommends libpq-dev gcc \
     && rm -rf /var/lib/apt/lists/*
 
-ARG REQUIREMENTS_FILE=requirements/development.txt
+ARG REQUIREMENTS_FILE=requirements/production.txt
 COPY requirements/ ./requirements/
 RUN pip install -r ${REQUIREMENTS_FILE}
 
@@ -23,4 +23,5 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["sh", "-c", "python manage.py collectstatic --noinput && python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 3"]
+
