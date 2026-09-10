@@ -65,6 +65,9 @@ import threading
 
 def _send_mail(*, subject, message, to):
     """Sends email in a background daemon thread so network SMTP latency never blocks the HTTP response."""
+    # Always print the email message content immediately to stdout so the link is visible in cloud logs
+    print(f"\n[EMAIL DISPATCH] To: {to} | Subject: {subject}\nMessage:\n{message}\n", flush=True)
+
     def _deliver():
         try:
             from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None) or getattr(settings, "EMAIL_HOST_USER", None)
