@@ -257,6 +257,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/AdminAccount'
           description: ''
+  /api/v1/analytics/platform-stats:
+    get:
+      operationId: v1_analytics_platform_stats_retrieve
+      description: GET /analytics/platform-stats -- Public platform totals and active developer count.
+      tags:
+      - analytics
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformStats'
+          description: ''
   /api/v1/analytics/hackathons/{hackathon_id}/dashboard:
     get:
       operationId: v1_analytics_hackathons_dashboard_retrieve
@@ -1760,6 +1773,25 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/submissions/mine:
+    get:
+      operationId: v1_submissions_mine_list
+      description: GET /submissions/mine -- Returns all submitted projects for the authenticated user.
+      tags:
+      - submissions
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MySubmission'
+          description: ''
+        '401':
+          description: Unauthorized
   /api/v1/submissions/{submission_id}:
     get:
       operationId: v1_submissions_retrieve
@@ -2604,6 +2636,110 @@ components:
       - name
       - rubricReference
       - sponsorOrgId
+    PlatformStats:
+      type: object
+      description: Real-time platform-wide statistics for public hero/landing pages.
+      properties:
+        activeDevelopers:
+          type: integer
+          example: 1250
+        totalRegistrations:
+          type: integer
+          example: 3400
+        totalHackathons:
+          type: integer
+          example: 24
+        totalPrizeVolumeETB:
+          type: number
+          format: float
+          example: 4500000.0
+        totalProjects:
+          type: integer
+          example: 85
+      required:
+      - activeDevelopers
+      - totalRegistrations
+      - totalHackathons
+      - totalPrizeVolumeETB
+      - totalProjects
+    MySubmission:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "0395b71d-b969-4700-a282-a1577b74fa03"
+        title:
+          type: string
+          example: "EcoPath Optimizer"
+        tagline:
+          type: string
+          example: "AI carbon footprint optimizer"
+        description:
+          type: string
+          example: "Real-time carbon tracking for urban delivery fleets."
+        hackathonId:
+          type: string
+          format: uuid
+          example: "11111111-2222-3333-4444-555555555555"
+        hackathonTitle:
+          type: string
+          example: "Global AI Hackathon 2024"
+        hackathonCategory:
+          type: string
+          example: "Logistics & AI"
+        teamName:
+          type: string
+          example: "Team Alpha"
+        isFinalized:
+          type: boolean
+          example: true
+        submittedAt:
+          type: string
+          format: date-time
+          example: "2024-09-02T11:20:00Z"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-09-01T10:00:00Z"
+        repoLink:
+          type: string
+          example: "https://github.com/alpha/project"
+        demoVideoUrl:
+          type: string
+          example: "https://youtube.com/watch?v=demo"
+        attachmentUrls:
+          type: array
+          items:
+            type: string
+          example:
+          - "https://ecopath.et"
+        technologies:
+          type: array
+          items:
+            type: string
+          example:
+          - "React"
+          - "Python"
+        rank:
+          type: string
+          enum:
+          - FIRST
+          - SECOND
+          - THIRD
+          - NONE
+          example: "FIRST"
+        payoutStatus:
+          type: string
+          enum:
+          - NOT_REQUESTED
+          - REQUESTED
+          - SUBMITTED
+          - PAID
+          example: "NOT_REQUESTED"
+      required:
+      - id
+      - title
     ChallengeTrackCreate:
       type: object
       properties:
@@ -2752,9 +2888,11 @@ components:
           type: string
           maxLength: 255
           pattern: ^[-a-zA-Z0-9_]+$
+          example: "agristream-2024"
         bannerUrl:
           type: string
           readOnly: true
+          example: "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1200&q=80"
         registrationOpensAt:
           type: string
           format: date-time

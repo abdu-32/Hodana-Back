@@ -29,4 +29,8 @@ urlpatterns = [
     path("api/v1/notifications/", include("apps.notifications.urls")),
     path("api/v1/analytics/", include("apps.analytics.urls")),
     path("api/v1/admin/", include("apps.platform_admin.urls")),
+    path("api/v1/help/", include("apps.knowledge_base.urls")),
+    path("api/v1/kb/", include("apps.knowledge_base.urls")),
+    path("api/v1/support/", include("apps.support.urls")),
+    path("api/v1/ai/", include("apps.support_ai.urls")),
 ]

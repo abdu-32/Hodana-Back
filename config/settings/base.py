@@ -61,6 +61,9 @@ LOCAL_APPS = [
     "apps.notifications",
     "apps.analytics",
     "apps.platform_admin",
+    "apps.knowledge_base",
+    "apps.support",
+    "apps.support_ai",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -230,6 +233,7 @@ CELERY_TASK_ROUTES = {
     "apps.submissions.tasks.*": {"queue": "media"},
     "apps.analytics.tasks.*": {"queue": "analytics"},
     "apps.hackathons.tasks.*": {"queue": "scheduled"},
+    "apps.support_ai.tasks.*": {"queue": "ai_indexing"},
 }
 
 # FR-NOTIFY-001/002 (deadline reminder) and FR-NOTIFY-001 (90-day in-app
