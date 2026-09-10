@@ -9,8 +9,22 @@ from .base import *  # noqa: F401,F403
 from .base import env
 
 DEBUG = False
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[".railway.app", "localhost", "127.0.0.1"])
-CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[".railway.app", "localhost", "127.0.0.1", "*"])
+
+raw_csrf_origins = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip() if origin.strip().startswith(("http://", "https://")) else f"https://{origin.strip()}"
+    for origin in raw_csrf_origins
+    if origin.strip()
+]
+
+raw_cors_origins = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:3000"])
+CORS_ALLOWED_ORIGINS = [
+    origin.strip() if origin.strip().startswith(("http://", "https://")) else f"https://{origin.strip()}"
+    for origin in raw_cors_origins
+    if origin.strip()
+]
+
 
 SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
 SESSION_COOKIE_SECURE = True
