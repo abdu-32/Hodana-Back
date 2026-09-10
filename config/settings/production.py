@@ -59,10 +59,15 @@ EMAIL_USE_TLS = False if EMAIL_USE_SSL else env.bool("EMAIL_USE_TLS", default=Tr
 EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
 
 RESEND_API_KEY = env("RESEND_API_KEY", default="")
-if RESEND_API_KEY:
+BREVO_API_KEY = env("BREVO_API_KEY", default="")
+
+if BREVO_API_KEY:
+    EMAIL_BACKEND = env("EMAIL_BACKEND", default="apps.core.email_backends.BrevoEmailBackend")
+elif RESEND_API_KEY:
     EMAIL_BACKEND = env("EMAIL_BACKEND", default="apps.core.email_backends.ResendEmailBackend")
 else:
     EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
+
 
 
 
