@@ -9,22 +9,8 @@ from .base import *  # noqa: F401,F403
 from .base import env
 
 DEBUG = False
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[".railway.app", "localhost", "127.0.0.1", "*"])
-
-raw_csrf_origins = env.list("CSRF_TRUSTED_ORIGINS", default=[])
-CSRF_TRUSTED_ORIGINS = [
-    origin.strip() if origin.strip().startswith(("http://", "https://")) else f"https://{origin.strip()}"
-    for origin in raw_csrf_origins
-    if origin.strip()
-]
-
-raw_cors_origins = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:3000"])
-CORS_ALLOWED_ORIGINS = [
-    origin.strip() if origin.strip().startswith(("http://", "https://")) else f"https://{origin.strip()}"
-    for origin in raw_cors_origins
-    if origin.strip()
-]
-
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[".railway.app", "localhost", "127.0.0.1"])
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
 SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
 SESSION_COOKIE_SECURE = True
@@ -69,5 +55,8 @@ EMAIL_HOST = env("EMAIL_HOST", default="")
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
-EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
+EMAIL_USE_TLS = False if EMAIL_USE_SSL else env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
+
 

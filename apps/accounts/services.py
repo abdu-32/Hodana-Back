@@ -67,15 +67,22 @@ def _send_mail(*, subject, message, to):
     """Sends email in a background daemon thread so network SMTP latency never blocks the HTTP response."""
     def _deliver():
         try:
+            from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None) or getattr(settings, "EMAIL_HOST_USER", None)
+            if not from_email or "innovationhub.local" in from_email:
+                from_email = getattr(settings, "EMAIL_HOST_USER", None) or from_email
+
             send_mail(
                 subject=subject,
                 message=message,
-                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+                from_email=from_email,
                 recipient_list=[to],
                 fail_silently=False,
             )
+            logger.info("Email successfully sent to %s", to)
+            print(f"[EMAIL SUCCESS] Verification email sent to {to}", flush=True)
         except Exception as exc:
-            logger.error("Failed to send email to %s: %s", to, exc)
+            logger.exception("Failed to send email to %s: %s", to, exc)
+            print(f"[EMAIL ERROR] Failed to send email to {to}: {exc}", flush=True)
 
     threading.Thread(target=_deliver, daemon=True).start()
 
