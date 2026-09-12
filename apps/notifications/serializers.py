@@ -106,22 +106,22 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
             try:
                 import re
                 from apps.support.models import Ticket
-                match = re.search(r"(?:ticket|regarding)\s+['\"]([^'\"]+)['\"]", msg)
+                match = re.search(r"['\"]([^'\"]+)['\"]", msg)
                 if match:
                     t_subject = match.group(1).strip()
-                    ticket = Ticket.objects.filter(subject=t_subject).only("category").first()
+                    ticket = Ticket.objects.filter(subject__iexact=t_subject).only("category").first()
                     if ticket and ticket.category in INQUIRY_TITLES:
                         return INQUIRY_TITLES[ticket.category]
             except Exception:
                 pass
 
-            # 4. Keyword heuristics for inquiry category
-            if any(w in lower_msg for w in ["bug", "error", "fail", "broken", "issue", "technical", "verification link", "login"]):
-                return INQUIRY_TITLES["technical"]
-            if any(w in lower_msg for w in ["payment", "prize", "payout", "invoice", "billing", "reward"]):
+            # 4. Keyword heuristics for inquiry category (billing first, hackathon second, technical third, general last)
+            if any(w in lower_msg for w in ["payment", "prize", "payout", "invoice", "billing", "refund", "reward"]):
                 return INQUIRY_TITLES["billing"]
-            if any(w in lower_msg for w in ["rules", "judging criteria", "submission requirement"]):
+            if any(w in lower_msg for w in ["rules", "judging criteria", "judging", "submission requirement"]):
                 return INQUIRY_TITLES["hackathon_specific"]
+            if any(w in lower_msg for w in ["bug", "error", "fail", "broken", "technical", "verification", "login", "platform"]):
+                return INQUIRY_TITLES["technical"]
 
             return INQUIRY_TITLES["general"]
 
