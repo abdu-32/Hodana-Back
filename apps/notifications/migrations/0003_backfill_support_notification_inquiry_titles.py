@@ -52,21 +52,24 @@ def backfill_inquiry_titles(apps, schema_editor):
             resolved_title = INQUIRY_TITLES["general"]
             resolved_category = "support_general"
         elif Ticket:
-            match = re.search(r"(?:ticket|regarding)\s+['\"]([^'\"]+)['\"]", msg)
+            match = re.search(r"['\"]([^'\"]+)['\"]", msg)
             if match:
                 t_subj = match.group(1).strip()
-                t = Ticket.objects.filter(subject=t_subj).first()
+                t = Ticket.objects.filter(subject__iexact=t_subj).first()
                 if t and t.category in INQUIRY_TITLES:
                     resolved_title = INQUIRY_TITLES[t.category]
                     resolved_category = f"support_{t.category}"
 
         if not resolved_title:
-            if any(w in lower_msg for w in ["bug", "error", "broken", "issue", "technical", "verification link"]):
-                resolved_title = INQUIRY_TITLES["technical"]
-                resolved_category = "support_technical"
-            elif any(w in lower_msg for w in ["payment", "prize", "payout", "invoice", "billing"]):
+            if any(w in lower_msg for w in ["payment", "prize", "payout", "invoice", "billing", "refund", "reward"]):
                 resolved_title = INQUIRY_TITLES["billing"]
                 resolved_category = "support_billing"
+            elif any(w in lower_msg for w in ["rules", "judging criteria", "judging", "submission requirement"]):
+                resolved_title = INQUIRY_TITLES["hackathon_specific"]
+                resolved_category = "support_hackathon_specific"
+            elif any(w in lower_msg for w in ["bug", "error", "broken", "technical", "verification", "login"]):
+                resolved_title = INQUIRY_TITLES["technical"]
+                resolved_category = "support_technical"
             else:
                 resolved_title = INQUIRY_TITLES["general"]
                 resolved_category = "support_general"
