@@ -3344,6 +3344,10 @@ components:
           format: uuid
           readOnly: true
           nullable: true
+        title:
+          type: string
+        category:
+          type: string
         message:
           type: string
         channel:
@@ -3402,6 +3406,12 @@ components:
           format: uuid
           readOnly: true
           nullable: true
+        title:
+          type: string
+          readOnly: true
+        category:
+          type: string
+          readOnly: true
         message:
           type: string
           readOnly: true
