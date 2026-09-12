@@ -156,7 +156,11 @@ def notify_users(*, category, recipients, subject, message, hackathon=None,
     with transaction.atomic():
         for channel in channels:
             notification = Notification.objects.create(
-                hackathon=hackathon, message=message, channel=channel,
+                hackathon=hackathon,
+                title=subject or "",
+                category=category or "",
+                message=message,
+                channel=channel,
             )
             notifications.append(notification)
             if channel == "email":
@@ -321,7 +325,7 @@ def notify_judging_results_published(hackathon):
 
 # ---- Organizer-authored announcement (Doc 04 POST /notifications) ----------
 
-def create_announcement(*, actor, hackathon_id, message, channel=None, channels=None):
+def create_announcement(*, actor, hackathon_id, message, channel=None, channels=None, title=None):
     """POST /notifications -- Doc 04's `createNotification`. An Organizer
     of the hackathon's host organization broadcasts an announcement to
     every actively registered participant over in_portal and/or email.
@@ -351,16 +355,21 @@ def create_announcement(*, actor, hackathon_id, message, channel=None, channels=
         r.user for r in
         Registration.objects.scoped_to(hackathon.id).filter(withdrawn_at__isnull=True).select_related("user")
     ]
+    resolved_title = title or f"Announcement: {hackathon.title}"
     notifications = notify_users(
         category="organizer_announcement",
         hackathon=hackathon,
         recipients=recipients,
-        subject=f"Announcement: {hackathon.title}",
+        subject=resolved_title,
         message=message,
         channels=tuple(resolved_channels),
     )
     return notifications[0] if notifications else Notification.objects.create(
-        hackathon=hackathon, message=message, channel=resolved_channels[0],
+        hackathon=hackathon,
+        title=resolved_title,
+        category="organizer_announcement",
+        message=message,
+        channel=resolved_channels[0],
     )
 
 

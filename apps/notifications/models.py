@@ -65,6 +65,8 @@ class Notification(models.Model):
         "hackathons.Hackathon", on_delete=models.CASCADE, null=True, blank=True,
         related_name="notifications",
     )
+    title = models.CharField(max_length=255, blank=True, default="")
+    category = models.CharField(max_length=50, blank=True, default="")
     message = models.TextField()
     channel = models.CharField(max_length=20, choices=CHANNEL_CHOICES)
     created_at = models.DateTimeField(auto_now_add=True)
