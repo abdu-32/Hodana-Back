@@ -49,13 +49,85 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
         fields = ["id", "notificationId", "hackathonId", "title", "category", "message", "channel", "status", "createdAt", "readAt"]
 
     def get_title(self, obj) -> str:
-        # 1. If explicit title is stored on notification, use it
-        if obj.notification and obj.notification.title:
-            return obj.notification.title
-
-        # 2. Contextual fallback for existing/legacy database records
+        stored_title = (obj.notification.title or "").strip() if obj.notification else ""
         msg = (obj.notification.message or "").strip() if obj.notification else ""
         cat = (obj.notification.category or "").lower() if obj.notification else ""
+        lower_msg = msg.lower()
+
+        # Inquiry category headlines
+        INQUIRY_TITLES = {
+            "technical": "Technical & Platform Bug",
+            "billing": "Payments, Prizes & Billing",
+            "general": "General Platform Question",
+            "hackathon_specific": "Hackathon Rules & Judging",
+        }
+        INQUIRY_HEADLINES = set(INQUIRY_TITLES.values())
+
+        # 1. If stored_title is already an Inquiry Category headline, return it immediately
+        if stored_title in INQUIRY_HEADLINES:
+            return stored_title
+
+        # Check if this notification is for a support ticket
+        is_support = (
+            cat.startswith("support")
+            or "support ticket" in lower_msg
+            or "ticket reference" in lower_msg
+            or "support team" in lower_msg
+            or "support specialist" in lower_msg
+            or "replied to ticket" in lower_msg
+            or "category: technical" in lower_msg
+            or "category: billing" in lower_msg
+            or "category: general" in lower_msg
+            or "category: hackathon" in lower_msg
+        )
+
+        if is_support:
+            # 1. Resolve from category code
+            if "technical" in cat:
+                return INQUIRY_TITLES["technical"]
+            if "billing" in cat:
+                return INQUIRY_TITLES["billing"]
+            if "hackathon" in cat:
+                return INQUIRY_TITLES["hackathon_specific"]
+            if "general" in cat and "support" in cat:
+                return INQUIRY_TITLES["general"]
+
+            # 2. Check message content for category lines
+            if "category: technical" in lower_msg:
+                return INQUIRY_TITLES["technical"]
+            if "category: billing" in lower_msg:
+                return INQUIRY_TITLES["billing"]
+            if "category: general" in lower_msg:
+                return INQUIRY_TITLES["general"]
+            if "category: hackathon" in lower_msg:
+                return INQUIRY_TITLES["hackathon_specific"]
+
+            # 3. Try to extract ticket subject from message to look up Ticket category in DB
+            try:
+                import re
+                from apps.support.models import Ticket
+                match = re.search(r"(?:ticket|regarding)\s+['\"]([^'\"]+)['\"]", msg)
+                if match:
+                    t_subject = match.group(1).strip()
+                    ticket = Ticket.objects.filter(subject=t_subject).only("category").first()
+                    if ticket and ticket.category in INQUIRY_TITLES:
+                        return INQUIRY_TITLES[ticket.category]
+            except Exception:
+                pass
+
+            # 4. Keyword heuristics for inquiry category
+            if any(w in lower_msg for w in ["bug", "error", "fail", "broken", "issue", "technical", "verification link", "login"]):
+                return INQUIRY_TITLES["technical"]
+            if any(w in lower_msg for w in ["payment", "prize", "payout", "invoice", "billing", "reward"]):
+                return INQUIRY_TITLES["billing"]
+            if any(w in lower_msg for w in ["rules", "judging criteria", "submission requirement"]):
+                return INQUIRY_TITLES["hackathon_specific"]
+
+            return INQUIRY_TITLES["general"]
+
+        # 2. If explicit title is stored on notification and not generic, use it
+        if stored_title and stored_title.lower() not in ["hackathon announcement", "notification"]:
+            return stored_title
 
         # Remove priority tag if formatted like [URGENT] or [IMPORTANT]
         for tag in ["[URGENT]", "[IMPORTANT]", "[INFO]"]:
@@ -71,17 +143,6 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
             candidate = msg.split(" - ", 1)[0].strip()
             if candidate and len(candidate) < 80:
                 return candidate
-
-        lower_msg = msg.lower()
-
-        # Support ticket patterns
-        if "support ticket" in lower_msg or "support_ticket" in cat:
-            # Per Requirement 3: Use the actual notification message if descriptive and self-contained
-            if "status has been updated" in lower_msg or "has been received" in lower_msg:
-                return msg
-            if "new message" in lower_msg or "replied to" in lower_msg or "response" in lower_msg:
-                return "Support Ticket Reply"
-            return "Support Ticket Update"
 
         # Team patterns
         if "invited to join the team" in lower_msg or "team_invitation" in cat:

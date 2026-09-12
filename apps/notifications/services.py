@@ -131,7 +131,7 @@ def _send_sms_fallback(*, hackathon, message, recipients):
 # ---- Fan-out core -----------------------------------------------------------
 
 def notify_users(*, category, recipients, subject, message, hackathon=None,
-                  channels=("email", "in_portal"), sms=False):
+                  channels=("email", "in_portal"), sms=False, title=None):
     """FR-NOTIFY-001 fan-out: creates one Notification row per requested
     channel and a NotificationDelivery row per recipient per channel
     (DB Design Sec 4.8), then actually sends/records each one.
@@ -152,12 +152,13 @@ def notify_users(*, category, recipients, subject, message, hackathon=None,
     if not recipients:
         return []
 
+    resolved_title = title or subject or ""
     notifications = []
     with transaction.atomic():
         for channel in channels:
             notification = Notification.objects.create(
                 hackathon=hackathon,
-                title=subject or "",
+                title=resolved_title,
                 category=category or "",
                 message=message,
                 channel=channel,
