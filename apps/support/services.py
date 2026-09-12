@@ -12,6 +12,13 @@ from .models import Ticket, TicketMessage, InternalNote, StatusHistory, Attachme
 
 logger = logging.getLogger(__name__)
 
+INQUIRY_CATEGORY_TITLES = {
+    "technical": "Technical & Platform Bug",
+    "billing": "Payments, Prizes & Billing",
+    "general": "General Platform Question",
+    "hackathon_specific": "Hackathon Rules & Judging",
+}
+
 
 def _get_ticket_or_404(ticket_id):
     try:
@@ -166,9 +173,11 @@ def _notify_admins_new_ticket(ticket, full_body, actor):
             logger.error("Failed to dispatch support ticket email to platform admins: %s", exc)
 
     if admins:
+        inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
         notify_users(
-            category="support_ticket_created",
+            category=f"support_{ticket.category}",
             recipients=admins,
+            title=inquiry_headline,
             subject=f"New Ticket: {ticket.subject}",
             message=f"New support ticket submitted by {submitter_name}: '{ticket.subject}' [{ticket.priority.upper()}].",
             channels=("in_portal",),
@@ -193,9 +202,11 @@ def _notify_submitter_ticket_created(ticket, actor):
         f"Best regards,\n"
         f"Ethiopia Innovation Hub Support Team"
     )
+    inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
     notify_users(
-        category="support_ticket_created",
+        category=f"support_{ticket.category}",
         recipients=[actor],
+        title=inquiry_headline,
         subject=sub_subject,
         message=sub_message,
         channels=("email", "in_portal"),
@@ -435,9 +446,11 @@ def add_message(*, actor, ticket_id, body) -> TicketMessage:
             except Exception as e:
                 logger.error("Failed to notify admins of ticket reply: %s", e)
         if admins:
+            inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
             notify_users(
-                category="support_ticket_reply",
+                category=f"support_{ticket.category}",
                 recipients=admins,
+                title=inquiry_headline,
                 subject=msg_subject,
                 message=f"{author_name} replied to ticket: '{ticket.subject}'.",
                 channels=("in_portal",),
@@ -499,9 +512,11 @@ def add_message(*, actor, ticket_id, body) -> TicketMessage:
                     )
                 except Exception as e:
                     logger.error("Failed to email user ticket reply: %s", e)
+            inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
             notify_users(
-                category="support_ticket_reply",
+                category=f"support_{ticket.category}",
                 recipients=[ticket.submitter],
+                title=inquiry_headline,
                 subject=user_subject,
                 message=user_body,
                 channels=("in_portal",),
@@ -565,10 +580,12 @@ def update_ticket_status(*, actor, ticket_id, new_status) -> Ticket:
             actor_id=actor.id, action="ticket_status_updated", target_type="ticket", target_id=str(ticket.id), metadata={"from": old_status, "to": new_status}
         )
     if ticket.submitter:
+        inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
         notify_users(
-            category="support_ticket_updated",
+            category=f"support_{ticket.category}",
             recipients=[ticket.submitter],
-            subject=_("Your support ticket has been updated"),
+            title=inquiry_headline,
+            subject=inquiry_headline,
             message=_("Your support ticket '{subject}' status has been updated to {status}.").format(subject=ticket.subject, status=new_status),
             channels=("in_portal",),
         )
