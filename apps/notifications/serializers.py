@@ -11,7 +11,7 @@ from .models import Notification, NotificationDelivery
 class NotificationCreateRequestSerializer(serializers.Serializer):
     """POST /notifications -- Doc 04 `NotificationCreateRequest`."""
 
-    hackathonId = serializers.UUIDField(source="hackathon_id")
+    hackathonId = serializers.UUIDField(source="hackathon_id", required=False, allow_null=True)
     title = serializers.CharField(required=False, default="")
     message = serializers.CharField()
     channel = serializers.CharField(required=False, default="in_portal")
@@ -38,6 +38,7 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
     notificationId = serializers.UUIDField(source="notification_id", read_only=True)
     hackathonId = serializers.UUIDField(source="notification.hackathon_id", read_only=True, allow_null=True)
     title = serializers.SerializerMethodField()
+    priority = serializers.SerializerMethodField()
     category = serializers.CharField(source="notification.category", read_only=True)
     message = serializers.CharField(source="notification.message", read_only=True)
     status = serializers.CharField(read_only=True)
@@ -46,7 +47,18 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = NotificationDelivery
-        fields = ["id", "notificationId", "hackathonId", "title", "category", "message", "channel", "status", "createdAt", "readAt"]
+        fields = ["id", "notificationId", "hackathonId", "title", "priority", "category", "message", "channel", "status", "createdAt", "readAt"]
+
+    def get_priority(self, obj) -> str:
+        if not obj.notification:
+            return "INFO"
+        msg = (obj.notification.message or "").strip()
+        lower_msg = msg.lower()
+        if "[urgent]" in lower_msg or "priority: urgent" in lower_msg:
+            return "URGENT"
+        if "[important]" in lower_msg or "[high]" in lower_msg or "priority: high" in lower_msg or "priority: important" in lower_msg:
+            return "IMPORTANT"
+        return "INFO"
 
     def get_title(self, obj) -> str:
         stored_title = (obj.notification.title or "").strip() if obj.notification else ""
@@ -179,6 +191,10 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
             return "Registration Confirmation"
         if "schedule for" in lower_msg or "timeline" in cat:
             return "Hackathon Schedule Update"
+
+        # Platform-wide announcement or broadcast
+        if obj.notification and not obj.notification.hackathon_id and ("broadcast" in cat or "platform" in cat):
+            return stored_title or "Platform Announcement"
 
         # Hackathon announcement (ONLY if hackathon is linked)
         if obj.notification and obj.notification.hackathon_id:
