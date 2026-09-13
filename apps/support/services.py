@@ -203,14 +203,27 @@ def _notify_submitter_ticket_created(ticket, actor):
         f"Ethiopia Innovation Hub Support Team"
     )
     inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
+    in_portal_msg = f"Your support ticket '{ticket.subject}' has been received and is under review [{ticket.priority.upper()}]."
     notify_users(
         category=f"support_{ticket.category}",
         recipients=[actor],
         title=inquiry_headline,
         subject=sub_subject,
-        message=sub_message,
-        channels=("email", "in_portal"),
+        message=in_portal_msg,
+        channels=("in_portal",),
     )
+    try:
+        user_email = getattr(actor, "email", None)
+        if user_email:
+            send_mail(
+                subject=sub_subject,
+                message=sub_message,
+                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+                recipient_list=[user_email],
+                fail_silently=False,
+            )
+    except Exception as exc:
+        logger.error("Failed to email submitter ticket creation: %s", exc)
 
 
 def create_ticket(*, actor, subject, body, category, priority="normal", scope_type=None, scope_id=None, other_details=None) -> Ticket:
@@ -513,12 +526,13 @@ def add_message(*, actor, ticket_id, body) -> TicketMessage:
                 except Exception as e:
                     logger.error("Failed to email user ticket reply: %s", e)
             inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
+            clean_reply_msg = f"Support specialist replied to ticket: '{ticket.subject}' [{ticket.priority.upper()}]."
             notify_users(
                 category=f"support_{ticket.category}",
                 recipients=[ticket.submitter],
                 title=inquiry_headline,
                 subject=user_subject,
-                message=user_body,
+                message=clean_reply_msg,
                 channels=("in_portal",),
             )
 
@@ -581,12 +595,13 @@ def update_ticket_status(*, actor, ticket_id, new_status) -> Ticket:
         )
     if ticket.submitter:
         inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
+        status_msg = f"Your support ticket '{ticket.subject}' status has been updated to {new_status} [{ticket.priority.upper()}]."
         notify_users(
             category=f"support_{ticket.category}",
             recipients=[ticket.submitter],
             title=inquiry_headline,
             subject=inquiry_headline,
-            message=_("Your support ticket '{subject}' status has been updated to {status}.").format(subject=ticket.subject, status=new_status),
+            message=status_msg,
             channels=("in_portal",),
         )
     return ticket

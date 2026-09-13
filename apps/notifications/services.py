@@ -326,16 +326,28 @@ def notify_judging_results_published(hackathon):
 
 # ---- Organizer-authored announcement (Doc 04 POST /notifications) ----------
 
-def create_announcement(*, actor, hackathon_id, message, channel=None, channels=None, title=None):
-    """POST /notifications -- Doc 04's `createNotification`. An Organizer
-    of the hackathon's host organization broadcasts an announcement to
-    every actively registered participant over in_portal and/or email.
+def create_announcement(*, actor, hackathon_id=None, message, channel=None, channels=None, title=None):
+    """POST /notifications -- Doc 04's `createNotification`.
+    Allows Organizers (scoped to hackathon) or Platform Admins (platform-wide or scoped)
+    to broadcast an announcement over in_portal and/or email.
     """
+    from apps.accounts.models import Account, RoleAssignment
     from apps.registrations.models import Registration
 
-    hackathon = _get_hackathon_or_404(hackathon_id)
-    if not _is_organizer_of_hackathon(actor=actor, hackathon=hackathon):
-        raise PermissionDenied("Only an Organizer of this hackathon can post an announcement.")
+    is_admin = (
+        getattr(actor, "is_staff", False)
+        or getattr(actor, "is_superuser", False)
+        or RoleAssignment.objects.filter(user=actor, role="platform_admin").exists()
+    )
+
+    hackathon = None
+    if hackathon_id and str(hackathon_id).lower() not in ("all", "none", "null", ""):
+        hackathon = _get_hackathon_or_404(hackathon_id)
+        if not is_admin and not _is_organizer_of_hackathon(actor=actor, hackathon=hackathon):
+            raise PermissionDenied("Only an Organizer of this hackathon or Platform Admin can post an announcement.")
+    else:
+        if not is_admin:
+            raise PermissionDenied("Only a Platform Admin can broadcast platform-wide announcements.")
 
     # Determine delivery channels
     resolved_channels = []
@@ -352,13 +364,20 @@ def create_announcement(*, actor, hackathon_id, message, channel=None, channels=
     if not resolved_channels:
         resolved_channels = ["in_portal", "email"]
 
-    recipients = [
-        r.user for r in
-        Registration.objects.scoped_to(hackathon.id).filter(withdrawn_at__isnull=True).select_related("user")
-    ]
-    resolved_title = title or f"Announcement: {hackathon.title}"
+    if hackathon:
+        recipients = [
+            r.user for r in
+            Registration.objects.scoped_to(hackathon.id).filter(withdrawn_at__isnull=True).select_related("user")
+        ]
+        resolved_title = title or f"Announcement: {hackathon.title}"
+        category = "organizer_announcement"
+    else:
+        recipients = list(Account.objects.filter(is_active=True))
+        resolved_title = title or "Platform Announcement"
+        category = "platform_broadcast"
+
     notifications = notify_users(
-        category="organizer_announcement",
+        category=category,
         hackathon=hackathon,
         recipients=recipients,
         subject=resolved_title,
@@ -368,7 +387,7 @@ def create_announcement(*, actor, hackathon_id, message, channel=None, channels=
     return notifications[0] if notifications else Notification.objects.create(
         hackathon=hackathon,
         title=resolved_title,
-        category="organizer_announcement",
+        category=category,
         message=message,
         channel=resolved_channels[0],
     )
