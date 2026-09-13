@@ -69,15 +69,26 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
         # Inquiry category headlines
         INQUIRY_TITLES = {
             "technical": "Technical & Platform Bug",
-            "billing": "Payments, Prizes & Billing",
-            "general": "General Platform Question",
+            "billing": "Payments, Prizes, Billing",
+            "general": "General Platform Questions",
             "hackathon_specific": "Hackathon Rules & Judging",
         }
         INQUIRY_HEADLINES = set(INQUIRY_TITLES.values())
 
-        # 1. If stored_title is already an Inquiry Category headline, return it immediately
-        if stored_title in INQUIRY_HEADLINES:
-            return stored_title
+        CANONICAL_INQUIRY_MAP = {
+            "technical & platform bug": "Technical & Platform Bug",
+            "payments, prizes, billing": "Payments, Prizes, Billing",
+            "payments, prizes & billing": "Payments, Prizes, Billing",
+            "payments & prizes": "Payments, Prizes, Billing",
+            "general platform questions": "General Platform Questions",
+            "general platform question": "General Platform Questions",
+            "hackathon rules & judging": "Hackathon Rules & Judging",
+            "hackathon rules and judging": "Hackathon Rules & Judging",
+        }
+
+        # 1. If stored_title is already an Inquiry Category headline (or legacy variant), normalize and return
+        if stored_title.lower() in CANONICAL_INQUIRY_MAP:
+            return CANONICAL_INQUIRY_MAP[stored_title.lower()]
 
         # Check if this notification is for a support ticket
         is_support = (
@@ -87,27 +98,30 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
             or "support team" in lower_msg
             or "support specialist" in lower_msg
             or "replied to ticket" in lower_msg
+            or "my tickets" in lower_msg
+            or "ticket:" in lower_msg
             or "category: technical" in lower_msg
             or "category: billing" in lower_msg
             or "category: general" in lower_msg
             or "category: hackathon" in lower_msg
+            or "knowledge base" in lower_msg
         )
 
         if is_support:
             # 1. Resolve from category code
-            if "technical" in cat:
-                return INQUIRY_TITLES["technical"]
-            if "billing" in cat:
+            if "billing" in cat or "payment" in cat:
                 return INQUIRY_TITLES["billing"]
-            if "hackathon" in cat:
+            if "hackathon" in cat or "judging" in cat:
                 return INQUIRY_TITLES["hackathon_specific"]
-            if "general" in cat and "support" in cat:
+            if "technical" in cat or "bug" in cat:
+                return INQUIRY_TITLES["technical"]
+            if "general" in cat:
                 return INQUIRY_TITLES["general"]
 
             # 2. Check message content for category lines
             if "category: technical" in lower_msg:
                 return INQUIRY_TITLES["technical"]
-            if "category: billing" in lower_msg:
+            if "category: billing" in lower_msg or "category: payments" in lower_msg:
                 return INQUIRY_TITLES["billing"]
             if "category: general" in lower_msg:
                 return INQUIRY_TITLES["general"]

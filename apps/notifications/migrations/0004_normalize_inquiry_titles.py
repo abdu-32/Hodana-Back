@@ -2,7 +2,7 @@ import re
 from django.db import migrations
 
 
-def backfill_inquiry_titles(apps, schema_editor):
+def normalize_inquiry_titles(apps, schema_editor):
     Notification = apps.get_model("notifications", "Notification")
     try:
         Ticket = apps.get_model("support", "Ticket")
@@ -16,10 +16,29 @@ def backfill_inquiry_titles(apps, schema_editor):
         "hackathon_specific": "Hackathon Rules & Judging",
     }
 
+    CANONICAL_MAP = {
+        "payments, prizes & billing": "Payments, Prizes, Billing",
+        "payments, prizes, billing": "Payments, Prizes, Billing",
+        "payments & prizes": "Payments, Prizes, Billing",
+        "general platform question": "General Platform Questions",
+        "general platform questions": "General Platform Questions",
+        "technical & platform bug": "Technical & Platform Bug",
+        "hackathon rules & judging": "Hackathon Rules & Judging",
+    }
+
     for notif in Notification.objects.all():
+        stored_title = (notif.title or "").strip()
         msg = notif.message or ""
         lower_msg = msg.lower()
         cat = (notif.category or "").lower()
+
+        # If already matching a canonical title, normalize if needed
+        if stored_title.lower() in CANONICAL_MAP:
+            target_title = CANONICAL_MAP[stored_title.lower()]
+            if notif.title != target_title:
+                notif.title = target_title
+                notif.save(update_fields=["title"])
+            continue
 
         is_support = (
             cat.startswith("support")
@@ -42,7 +61,7 @@ def backfill_inquiry_titles(apps, schema_editor):
         if "technical" in cat or "category: technical" in lower_msg:
             resolved_title = INQUIRY_TITLES["technical"]
             resolved_category = "support_technical"
-        elif "billing" in cat or "category: billing" in lower_msg:
+        elif "billing" in cat or "category: billing" in lower_msg or "category: payments" in lower_msg:
             resolved_title = INQUIRY_TITLES["billing"]
             resolved_category = "support_billing"
         elif "hackathon" in cat or "category: hackathon" in lower_msg:
@@ -87,9 +106,9 @@ def noop(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("notifications", "0002_notification_title_category"),
+        ("notifications", "0003_backfill_support_notification_inquiry_titles"),
     ]
 
     operations = [
-        migrations.RunPython(backfill_inquiry_titles, noop),
+        migrations.RunPython(normalize_inquiry_titles, noop),
     ]
