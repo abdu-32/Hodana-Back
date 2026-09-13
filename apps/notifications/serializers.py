@@ -93,18 +93,18 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
         # Check if this notification is for a support ticket
         is_support = (
             cat.startswith("support")
-            or "support ticket" in lower_msg
-            or "ticket reference" in lower_msg
-            or "support team" in lower_msg
-            or "support specialist" in lower_msg
-            or "replied to ticket" in lower_msg
-            or "my tickets" in lower_msg
-            or "ticket:" in lower_msg
+            or "support" in cat
+            or "ticket" in cat
+            or "ticket" in lower_msg
+            or "support" in lower_msg
+            or "inquiry" in lower_msg
+            or "replied to" in lower_msg
+            or "submitted by" in lower_msg
+            or "knowledge base" in lower_msg
             or "category: technical" in lower_msg
             or "category: billing" in lower_msg
             or "category: general" in lower_msg
             or "category: hackathon" in lower_msg
-            or "knowledge base" in lower_msg
         )
 
         if is_support:
@@ -156,7 +156,7 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
             return stored_title
 
         # Remove priority tag if formatted like [URGENT] or [IMPORTANT]
-        for tag in ["[URGENT]", "[IMPORTANT]", "[INFO]"]:
+        for tag in ["[URGENT]", "[IMPORTANT]", "[HIGH]", "[NORMAL]", "[INFO]", "[LOW]"]:
             if msg.startswith(tag):
                 msg = msg[len(tag):].strip()
 
@@ -208,17 +208,27 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
 
         # Platform-wide announcement or broadcast
         if obj.notification and not obj.notification.hackathon_id and ("broadcast" in cat or "platform" in cat):
-            return stored_title or "Platform Announcement"
+            if stored_title and stored_title.lower() not in ["hackathon announcement", "notification"]:
+                return stored_title
+            return "Platform Announcement"
 
-        # Hackathon announcement (ONLY if hackathon is linked)
+        # Hackathon update (ONLY if hackathon is linked)
         if obj.notification and obj.notification.hackathon_id:
             hackathon_title = getattr(obj.notification.hackathon, "title", None)
             if hackathon_title:
                 return f"Announcement: {hackathon_title}"
-            return "Hackathon Announcement"
+            return "Hackathon Update"
 
-        # Meaningful concise message as title (Requirement 3)
+        # Meaningful concise message as title
+        res = "Platform Announcement"
         if len(msg) <= 80 and "\n" not in msg:
-            return msg
+            res = msg
 
-        return "Notification"
+        if res.lower().strip() in ["hackathon announcement", "notification"]:
+            if is_support:
+                return INQUIRY_TITLES["general"]
+            if obj.notification and obj.notification.hackathon_id:
+                return "Hackathon Update"
+            return "Platform Announcement"
+
+        return res
