@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 INQUIRY_CATEGORY_TITLES = {
     "technical": "Technical & Platform Bug",
-    "billing": "Payments, Prizes & Billing",
-    "general": "General Platform Question",
+    "billing": "Payments, Prizes, Billing",
+    "general": "General Platform Questions",
     "hackathon_specific": "Hackathon Rules & Judging",
 }
 
@@ -173,7 +173,7 @@ def _notify_admins_new_ticket(ticket, full_body, actor):
             logger.error("Failed to dispatch support ticket email to platform admins: %s", exc)
 
     if admins:
-        inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
+        inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Questions")
         notify_users(
             category=f"support_{ticket.category}",
             recipients=admins,
@@ -202,7 +202,7 @@ def _notify_submitter_ticket_created(ticket, actor):
         f"Best regards,\n"
         f"Ethiopia Innovation Hub Support Team"
     )
-    inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
+    inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Questions")
     in_portal_msg = f"Your support ticket '{ticket.subject}' has been received and is under review [{ticket.priority.upper()}]."
     notify_users(
         category=f"support_{ticket.category}",
@@ -459,7 +459,7 @@ def add_message(*, actor, ticket_id, body) -> TicketMessage:
             except Exception as e:
                 logger.error("Failed to notify admins of ticket reply: %s", e)
         if admins:
-            inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
+            inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Questions")
             notify_users(
                 category=f"support_{ticket.category}",
                 recipients=admins,
@@ -525,7 +525,7 @@ def add_message(*, actor, ticket_id, body) -> TicketMessage:
                     )
                 except Exception as e:
                     logger.error("Failed to email user ticket reply: %s", e)
-            inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
+            inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Questions")
             clean_reply_msg = f"Support specialist replied to ticket: '{ticket.subject}' [{ticket.priority.upper()}]."
             notify_users(
                 category=f"support_{ticket.category}",
@@ -594,7 +594,7 @@ def update_ticket_status(*, actor, ticket_id, new_status) -> Ticket:
             actor_id=actor.id, action="ticket_status_updated", target_type="ticket", target_id=str(ticket.id), metadata={"from": old_status, "to": new_status}
         )
     if ticket.submitter:
-        inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Question")
+        inquiry_headline = INQUIRY_CATEGORY_TITLES.get(ticket.category, "General Platform Questions")
         status_msg = f"Your support ticket '{ticket.subject}' status has been updated to {new_status} [{ticket.priority.upper()}]."
         notify_users(
             category=f"support_{ticket.category}",
