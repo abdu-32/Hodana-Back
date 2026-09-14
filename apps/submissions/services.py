@@ -481,23 +481,14 @@ def list_organizer_submissions(*, actor, hackathon_id=None, min_score=0.0, categ
     from apps.accounts.models import RoleAssignment
     from apps.judging.models import Score, RoundResult
 
-    # 1. Determine managed hackathons
+    # 1. Determine managed hackathons (strictly scoped to hackathons created by the organizer)
     if (
         getattr(actor, "is_platform_admin", False)
         or getattr(actor, "is_superuser", False)
-        or getattr(actor, "role", None) in ("organizer", "admin")
     ):
         hackathons_qs = Hackathon.objects.all()
     else:
-        user_org_ids = RoleAssignment.objects.filter(
-            user=actor, role="organizer", scope_type="organization"
-        ).values_list("scope_id", flat=True)
-        created_org_ids = Organization.objects.filter(created_by=actor).values_list("id", flat=True)
-        hackathons_qs = Hackathon.objects.filter(
-            Q(host_org_id__in=user_org_ids)
-            | Q(host_org_id__in=created_org_ids)
-            | Q(created_by=actor)
-        )
+        hackathons_qs = Hackathon.objects.filter(created_by=actor)
 
     if hackathon_id and hackathon_id != "all":
         hackathons_qs = hackathons_qs.filter(id=hackathon_id)
