@@ -63,10 +63,17 @@ def _sanitize_response(content: str, question: str = "") -> str:
             if parts[0].strip().lower() == q_norm and len(parts) > 1 and parts[1].strip():
                 cleaned = parts[1].strip()
 
-    # 2. Strip leading 'Question:', 'Answer:', 'A:', or internal category headers
+    # 2. Strip leading '### Q:', '### \d+', 'Question:', 'Answer:', 'A:', or internal category headers
     import re
-    cleaned = re.sub(r"^(###?\s*\d+\.?[^\n]+\n+)", "", cleaned)
+    cleaned = re.sub(r"^(###?\s*(?:Q:|\d+\.?)[^\n]+\n+)", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"^###?\s*Q:\s*[^\n]+\n*", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"^(Category\s*\d+:?[^\n]+\n+)", "", cleaned, flags=re.IGNORECASE)
+
+    # If first line is a question ending with ? that matches question or starts with Q:, strip it
+    first_line = cleaned.split("\n", 1)[0].strip()
+    if (first_line.startswith("Q:") or first_line.endswith("?")) and len(cleaned.split("\n", 1)) > 1:
+        if question and (question.lower().strip("?") in first_line.lower() or first_line.lower().strip("?") in question.lower() or first_line.startswith("Q:")):
+            cleaned = cleaned.split("\n", 1)[1].strip()
 
     if cleaned.lower().startswith("question:"):
         cleaned = cleaned.split(":", 1)[1].strip()
@@ -372,55 +379,26 @@ def chat(
         except LLMUnavailableError:
             logger.warning("LLM unavailable for chat session %s", session.id)
             llm_unavailable = True
-            is_live_query = any(phrase in cleaned_q for phrase in [
+            # Check if query is explicitly asking for active hackathons or platform announcements
+            is_active_events_query = any(phrase in cleaned_q for phrase in [
                 "active hackathon", "current hackathon", "ongoing hackathon", "live hackathon",
                 "what hackathon", "what are the active", "upcoming hackathon", "latest hackathon",
-                "active event", "upcoming event", "latest update", "announcement",
-                "where is", "when does", "what are the prizes", "prize for", "tracks for",
-                "how do payments work", "payment method", "telebirr", "cbe birr", "chapa",
-                "how to register", "teammate finder", "ethio-fin", "greenseed", "amharic nlp",
-                "agristream", "fintech frontier", "ethio-health", "egov", "e-gov"
+                "active event", "upcoming event", "latest update", "announcement", "announcements",
+                "what competitions", "ongoing competitions"
             ])
-            is_rules_or_guide_query = any(w in cleaned_q for w in [
-                "hackathon rules", "submission rule", "general rule", "rubric criteria",
-                "blind judging", "what is the ethiopia innovation hub", "who is the platform for",
-                "system architecture", "modular monolith", "prompt injection", "sql injection"
+            is_specific_event_query = any(name in cleaned_q for name in [
+                "ethio-fin", "greenseed", "amharic nlp", "agristream", "fintech frontier", "ethio-health", "egov", "e-gov"
             ])
 
-            if chunks and not (is_live_query and not is_rules_or_guide_query):
-                best_chunk = chunks[0]
-                answer_text = best_chunk.text.strip()
-                if "?" in answer_text:
-                    parts = answer_text.split("?", 1)
-                    if len(parts) > 1 and parts[1].strip():
-                        answer_text = parts[1].strip()
-                if answer_text.lower().startswith("answer:"):
-                    answer_text = answer_text.split(":", 1)[1].strip()
-                elif answer_text.lower().startswith("a:"):
-                    answer_text = answer_text.split(":", 1)[1].strip()
-                assistant_content = answer_text
-            elif live_context and ("No active public hackathons" not in live_context or "PAYMENTS" in live_context):
-                if any(w in cleaned_q for w in ["payment", "telebirr", "cbe birr", "chapa", "payout"]):
-                    if "=== PAYMENTS" in live_context:
-                        assistant_content = live_context.split("=== PAYMENTS")[1].split("===")[0].strip()
-                        if assistant_content.startswith(", PRIZES & LOCAL CURRENCY ==="):
-                            assistant_content = assistant_content.replace(", PRIZES & LOCAL CURRENCY ===", "").strip()
-                    else:
-                        assistant_content = live_context
-                elif any(w in cleaned_q for w in ["announcement", "update", "latest", "news"]):
+            # 1. Prioritize live_context if the user asks specifically about active events or announcements
+            if (is_active_events_query or is_specific_event_query) and live_context:
+                if any(w in cleaned_q for w in ["announcement", "update", "latest news", "announcements"]):
                     if "=== RECENT" in live_context:
                         assistant_content = live_context.split("=== RECENT")[1].strip()
                         if assistant_content.startswith("PLATFORM ANNOUNCEMENTS & UPDATES ==="):
                             assistant_content = assistant_content.replace("PLATFORM ANNOUNCEMENTS & UPDATES ===", "").strip()
                         elif assistant_content.startswith("UPDATES ==="):
                             assistant_content = assistant_content.replace("UPDATES ===", "").strip()
-                    else:
-                        assistant_content = live_context
-                elif any(w in cleaned_q for w in ["register", "registration", "teammate finder", "solo", "team size"]):
-                    if "=== REGISTRATION" in live_context:
-                        assistant_content = live_context.split("=== REGISTRATION")[1].split("===")[0].strip()
-                        if assistant_content.startswith(", ELIGIBILITY & TEAM FORMATION ==="):
-                            assistant_content = assistant_content.replace(", ELIGIBILITY & TEAM FORMATION ===", "").strip()
                     else:
                         assistant_content = live_context
                 else:
@@ -436,10 +414,14 @@ def chat(
                                 break
                     if specific_match:
                         assistant_content = specific_match
-                    elif "=== PAYMENTS" in live_context:
-                        assistant_content = live_context.split("=== PAYMENTS")[0].strip()
+                    elif "=== LIVE HACKATHONS" in live_context:
+                        assistant_content = live_context.split("=== LIVE HACKATHONS")[1].split("=== PAYMENTS")[0].strip()
+                        if assistant_content.startswith("& ACTIVE COMPETITIONS ==="):
+                            assistant_content = assistant_content.replace("& ACTIVE COMPETITIONS ===", "").strip()
                     else:
                         assistant_content = live_context
+
+            # 2. Prioritize retrieved Knowledge Base chunks for all platform and procedural inquiries
             elif chunks:
                 best_chunk = chunks[0]
                 answer_text = best_chunk.text.strip()
@@ -452,6 +434,25 @@ def chat(
                 elif answer_text.lower().startswith("a:"):
                     answer_text = answer_text.split(":", 1)[1].strip()
                 assistant_content = answer_text
+
+            # 3. Fallback to live context for payment or registration details if no chunk was matched
+            elif live_context and ("No active public hackathons" not in live_context or "PAYMENTS" in live_context):
+                if any(w in cleaned_q for w in ["payment", "telebirr", "cbe birr", "chapa", "payout", "prize"]):
+                    if "=== PAYMENTS" in live_context:
+                        assistant_content = live_context.split("=== PAYMENTS")[1].split("===")[0].strip()
+                        if assistant_content.startswith(", PRIZES & LOCAL CURRENCY ==="):
+                            assistant_content = assistant_content.replace(", PRIZES & LOCAL CURRENCY ===", "").strip()
+                    else:
+                        assistant_content = live_context
+                elif any(w in cleaned_q for w in ["register", "registration", "teammate finder", "solo", "team size"]):
+                    if "=== REGISTRATION" in live_context:
+                        assistant_content = live_context.split("=== REGISTRATION")[1].split("===")[0].strip()
+                        if assistant_content.startswith(", ELIGIBILITY & TEAM FORMATION ==="):
+                            assistant_content = assistant_content.replace(", ELIGIBILITY & TEAM FORMATION ===", "").strip()
+                    else:
+                        assistant_content = live_context
+                else:
+                    assistant_content = "I can only help with questions related to the Ethiopia Innovation Hub, its features, processes, and documentation."
             else:
                 assistant_content = "I can only help with questions related to the Ethiopia Innovation Hub, its features, processes, and documentation."
     

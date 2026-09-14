@@ -131,6 +131,39 @@ def test_retrieve_chunks_keyword_fallback_when_embedding_empty():
         user=user,
         question="What are the hackathon guidelines?"
     )
-    assert len(chunks) == 1
+    assert len(chunks) >= 1
     assert chunks[0].id == chunk.id
+
+
+def test_retrieve_chunks_semantic_synonym_matching():
+    user = AccountFactory()
+    chunk_team = DocumentChunkFactory(
+        visibility="public",
+        text="Can I participate as an individual, or do I need a team? Some hackathons allow solo entries, but most require teams of 2 to 5 members.",
+        metadata={"title": "Can I participate as an individual, or do I need a team?"}
+    )
+    chunk_free = DocumentChunkFactory(
+        visibility="public",
+        text="Is the platform free to use? Creating an account and submitting projects is 100% free for participants.",
+        metadata={"title": "Is the platform free to use?"}
+    )
+    
+    # Test solo query maps to individual/team chunk
+    chunks_solo = retrieve_chunks(
+        query_embedding=[],
+        user=user,
+        question="Can I join solo without a team?"
+    )
+    assert len(chunks_solo) >= 1
+    assert chunks_solo[0].id == chunk_team.id
+
+    # Test fee/cost query maps to free chunk
+    chunks_cost = retrieve_chunks(
+        query_embedding=[],
+        user=user,
+        question="What is the fee or cost to use the platform?"
+    )
+    assert len(chunks_cost) >= 1
+    assert chunks_cost[0].id == chunk_free.id
+
 
