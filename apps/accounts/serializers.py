@@ -126,8 +126,15 @@ class UserProfileSerializer(serializers.Serializer):
 
     @extend_schema_field(serializers.CharField())
     def get_role(self, account):
-        if getattr(account, "is_platform_admin", False):
+        if getattr(account, "is_platform_admin", False) or getattr(account, "role", "") == "admin":
             return "admin"
+        if getattr(account, "role", "") == "organizer":
+            return "organizer"
+        if getattr(account, "role", "") == "judge":
+            return "judge"
+        if getattr(account, "role", "") == "participant":
+            return "participant"
+
         from apps.organizations.models import Organization
         verified_org_ids = Organization.objects.filter(
             verification_status="verified", is_suspended=False
@@ -137,18 +144,24 @@ class UserProfileSerializer(serializers.Serializer):
             scope_type="organization",
             scope_id__in=verified_org_ids,
         ).exists()
-        if has_verified_organizer or getattr(account, "role", "") == "organizer":
+        if has_verified_organizer:
             return "organizer"
-        if account.role_assignments.filter(role="judge").exists() or getattr(account, "role", "") == "judge":
+        if account.role_assignments.filter(role="judge").exists():
             return "judge"
-        return getattr(account, "role", "participant") or "participant"
+        return "participant"
 
     @extend_schema_field(serializers.ListField(child=serializers.CharField()))
     def get_roles(self, account):
         roles = {"participant"}
-        if getattr(account, "is_platform_admin", False):
+        if getattr(account, "is_platform_admin", False) or getattr(account, "role", "") == "admin":
             roles.add("admin")
+            roles.add("platform_admin")
             roles.add("organizer")
+
+        if getattr(account, "role", ""):
+            roles.add(account.role)
+            if account.role == "admin":
+                roles.add("platform_admin")
 
         from apps.organizations.models import Organization
         verified_org_ids = Organization.objects.filter(

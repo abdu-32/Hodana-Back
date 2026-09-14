@@ -33,6 +33,22 @@ class ModerationActionSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=2000, allow_blank=False)
 
 
+class ChangeUserRoleSerializer(serializers.Serializer):
+    role = serializers.CharField()
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate_role(self, value):
+        normalized = (value or "").strip().lower()
+        if normalized in ("admin", "superuser", "platform_admin"):
+            return "admin"
+        if normalized in ("organizer", "judge", "participant"):
+            return normalized
+        raise serializers.ValidationError(
+            f"Invalid role '{value}'. Must be one of: PARTICIPANT, ORGANIZER, JUDGE, ADMIN."
+        )
+
+
+
 class AdminOrganizationSerializer(serializers.ModelSerializer):
     contactEmail = serializers.EmailField(source="contact_email", read_only=True)
     primaryEmailDomain = serializers.CharField(source="primary_email_domain", read_only=True, allow_null=True)
@@ -151,8 +167,11 @@ class AdminAccountSerializer(serializers.ModelSerializer):
         ]
 
     def get_role(self, obj):
-        if obj.is_platform_admin:
+        if obj.is_platform_admin or getattr(obj, "role", "") == "admin":
             return "ADMIN"
+        role_val = getattr(obj, "role", "").upper()
+        if role_val in ("ORGANIZER", "JUDGE", "PARTICIPANT"):
+            return role_val
         assignment = obj.role_assignments.first()
         if assignment:
             return assignment.role.upper()

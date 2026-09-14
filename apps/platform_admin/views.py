@@ -242,6 +242,39 @@ class DeleteAccountView(APIView):
         return self.delete(request, id)
 
 
+class ChangeUserRoleView(APIView):
+    """POST /admin/users/{id}/change-role or POST /admin/users/{id}/role
+    or PATCH /admin/users/{id}
+    Allows superusers (Platform Admin) to change a user's role across
+    Participant, Judge, Organizer, and Admin (Superuser), and vice versa.
+    """
+
+    permission_classes = [IsPlatformAdmin]
+
+    @extend_schema(
+        request=serializers.ChangeUserRoleSerializer,
+        responses={200: serializers.AdminAccountSerializer},
+    )
+    def post(self, request, id):
+        serializer = serializers.ChangeUserRoleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        account = services.change_user_role(
+            admin=request.user,
+            user_id=id,
+            new_role=serializer.validated_data["role"],
+            reason=serializer.validated_data.get("reason"),
+        )
+        return Response(serializers.AdminAccountSerializer(account).data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        request=serializers.ChangeUserRoleSerializer,
+        responses={200: serializers.AdminAccountSerializer},
+    )
+    def patch(self, request, id):
+        return self.post(request, id)
+
+
+
 # --------------------------------------------------------------------------
 # FR-ADMIN-002: platform-wide search
 # --------------------------------------------------------------------------
@@ -309,11 +342,16 @@ class AdminUsersListView(APIView):
         ).order_by("-created_at")
 
         if role_param == "ADMIN":
-            qs = qs.filter(is_platform_admin=True)
+            qs = qs.filter(Q(is_platform_admin=True) | Q(role="admin"))
         elif role_param in ("ORGANIZER", "JUDGE", "SPONSOR", "MENTOR"):
-            qs = qs.filter(role_assignments__role=role_param.lower())
+            qs = qs.filter(Q(role_assignments__role=role_param.lower()) | Q(role=role_param.lower())).distinct()
         elif role_param == "PARTICIPANT":
-            qs = qs.filter(is_platform_admin=False).exclude(role_assignments__role__in=["organizer", "judge", "sponsor"])
+            qs = qs.filter(is_platform_admin=False).exclude(
+                Q(role="admin") |
+                Q(role="organizer") |
+                Q(role="judge") |
+                Q(role_assignments__role__in=["organizer", "judge", "sponsor", "mentor"])
+            ).distinct()
 
         if search_query:
             qs = qs.filter(
@@ -337,9 +375,14 @@ class AdminMetricsView(APIView):
         total_users = Account.objects.filter(deleted_at__isnull=True, verification_status="verified").count()
         active_participants = Account.objects.filter(
             deleted_at__isnull=True, verification_status="verified", is_suspended=False, is_platform_admin=False
+        ).exclude(
+            Q(role__in=["admin", "organizer", "judge"]) |
+            Q(role_assignments__role__in=["organizer", "judge", "sponsor", "mentor"])
         ).count()
         verified_organizers = Organization.objects.filter(verification_status="verified").count()
-        active_judges = RoleAssignment.objects.filter(role="judge").values("user_id").distinct().count()
+        active_judges = Account.objects.filter(
+            Q(role="judge") | Q(role_assignments__role="judge")
+        ).values("id").distinct().count()
 
         total_hackathons = Hackathon.objects.count()
         active_hackathons = Hackathon.objects.filter(is_suspended=False).count()

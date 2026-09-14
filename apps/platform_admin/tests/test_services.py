@@ -9,6 +9,7 @@ import uuid
 import pytest
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
+from apps.accounts.models import Account
 from apps.core.models import AuditLogEntry
 from apps.hackathons.models import Hackathon
 from apps.organizations.models import Organization
@@ -43,6 +44,11 @@ class TestPlatformAdminPrecondition:
     def test_platform_search_rejects_non_admin(self, regular_account):
         with pytest.raises(PermissionDenied):
             services.platform_search(admin=regular_account, query="anything")
+
+    def test_change_user_role_rejects_non_admin(self, regular_account, platform_admin):
+        with pytest.raises(PermissionDenied):
+            services.change_user_role(admin=regular_account, user_id=platform_admin.id, new_role="organizer")
+
 
 
 # ---------------------------------------------------------------------------
@@ -235,3 +241,75 @@ class TestPlatformSearch:
         entry = AuditLogEntry.objects.get(action="platform_admin.search")
         assert entry.actor_id == platform_admin.id
         assert entry.metadata["query"] == "anything"
+
+
+# ---------------------------------------------------------------------------
+# Role Governance: change user role
+# ---------------------------------------------------------------------------
+
+
+class TestChangeUserRole:
+    def test_change_judge_to_participant_and_vice_versa(self, platform_admin, regular_account):
+        # Participant -> Judge
+        judge_account = services.change_user_role(
+            admin=platform_admin, user_id=regular_account.id, new_role="judge"
+        )
+        assert judge_account.role == "judge"
+        assert judge_account.is_platform_admin is False
+
+        # Judge -> Participant
+        participant_account = services.change_user_role(
+            admin=platform_admin, user_id=regular_account.id, new_role="participant"
+        )
+        assert participant_account.role == "participant"
+        assert participant_account.is_platform_admin is False
+
+    def test_change_organizer_to_superuser_and_vice_versa(self, platform_admin, regular_account):
+        # Set to Organizer first
+        org_account = services.change_user_role(
+            admin=platform_admin, user_id=regular_account.id, new_role="organizer"
+        )
+        assert org_account.role == "organizer"
+        assert org_account.is_platform_admin is False
+
+        # Organizer -> Superuser (admin)
+        superuser_account = services.change_user_role(
+            admin=platform_admin, user_id=regular_account.id, new_role="admin"
+        )
+        assert superuser_account.role == "admin"
+        assert superuser_account.is_platform_admin is True
+        assert superuser_account.is_staff is True
+        assert superuser_account.is_superuser is True
+
+        # Superuser -> Organizer
+        demoted_account = services.change_user_role(
+            admin=platform_admin, user_id=regular_account.id, new_role="organizer"
+        )
+        assert demoted_account.role == "organizer"
+        assert demoted_account.is_platform_admin is False
+        assert demoted_account.is_staff is False
+        assert demoted_account.is_superuser is False
+
+    def test_cannot_modify_own_role(self, platform_admin):
+        with pytest.raises(ValidationError):
+            services.change_user_role(admin=platform_admin, user_id=platform_admin.id, new_role="participant")
+
+    def test_cannot_modify_primary_platform_admin(self, platform_admin):
+        primary_admin = Account.objects.create_user(
+            email=Account.PLATFORM_ADMIN_EMAIL,
+            password="TestPassword123!",
+            is_platform_admin=True,
+            role="admin",
+        )
+        with pytest.raises(ValidationError):
+            services.change_user_role(admin=platform_admin, user_id=primary_admin.id, new_role="participant")
+
+    def test_records_audit_log_entry(self, platform_admin, regular_account):
+        services.change_user_role(
+            admin=platform_admin, user_id=regular_account.id, new_role="judge", reason="Appointed as hackathon judge"
+        )
+        entry = AuditLogEntry.objects.filter(action="account.role_changed", target_id=str(regular_account.id)).latest("created_at")
+        assert entry.actor_id == platform_admin.id
+        assert entry.metadata["new_role"] == "judge"
+        assert "Appointed as hackathon judge" in entry.metadata["reason"]
+
