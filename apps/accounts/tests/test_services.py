@@ -134,6 +134,24 @@ class TestEmailVerification:
         services.resend_verification_email(email=verified_account.email)
         assert len(mailoutbox) == 0
 
+    def test_verification_email_includes_html_button(self, unverified_account, mailoutbox):
+        token = services.send_verification_email(unverified_account)
+        assert len(mailoutbox) == 1
+        msg = mailoutbox[0]
+        assert token in msg.body
+        assert hasattr(msg, "alternatives") and len(msg.alternatives) > 0
+        html_content, mimetype = msg.alternatives[0]
+        assert mimetype == "text/html"
+        assert "Verify My Email" in html_content
+        assert token in html_content
+
+    def test_render_verification_email_structure(self):
+        verify_url = "https://example.com/en/verify-email?token=test-token-xyz"
+        html_out = services.render_verification_email(verify_url=verify_url, user_name="Abebe Bikila")
+        assert "Verify My Email" in html_out
+        assert 'href="https://example.com/en/verify-email?token=test-token-xyz"' in html_out
+        assert "Abebe Bikila" in html_out
+
 
 # ---------------------------------------------------------------------------
 # FR-AUTH-002: login
