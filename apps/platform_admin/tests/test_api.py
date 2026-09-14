@@ -223,3 +223,44 @@ class TestPlatformSearchEndpoint:
         body = response.json()
         assert "users" in body and "organizations" in body and "hackathons" in body
         assert any(row["id"] == str(regular_account.id) for row in body["users"])
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/users/{id}/change-role
+# ---------------------------------------------------------------------------
+
+
+class TestChangeUserRoleEndpoint:
+    def test_requires_authentication(self, api_client, regular_account):
+        response = api_client.post(f"/api/v1/admin/users/{regular_account.id}/change-role", {"role": "judge"})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_non_admin_returns_403(self, api_client, regular_account, auth_headers):
+        response = api_client.post(
+            f"/api/v1/admin/users/{regular_account.id}/change-role",
+            {"role": "judge"},
+            format="json",
+            **auth_headers(regular_account),
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_admin_changes_role_successfully(self, api_client, platform_admin, regular_account, auth_headers):
+        response = api_client.post(
+            f"/api/v1/admin/users/{regular_account.id}/change-role",
+            {"role": "JUDGE", "reason": "Appointed to judging panel"},
+            format="json",
+            **auth_headers(platform_admin),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["role"] == "JUDGE"
+
+        # Demote back to participant
+        response = api_client.post(
+            f"/api/v1/admin/users/{regular_account.id}/change-role",
+            {"role": "PARTICIPANT", "reason": "Restored to participant"},
+            format="json",
+            **auth_headers(platform_admin),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["role"] == "PARTICIPANT"
+

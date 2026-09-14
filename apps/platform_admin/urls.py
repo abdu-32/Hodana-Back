@@ -99,7 +99,16 @@ urlpatterns = [
         name="organization-reactivate",
     ),
 
-    # FR-ADMIN-001 -- suspend / reactivate a user account.
+    path(
+        "users/<uuid:id>/change-role",
+        views.ChangeUserRoleView.as_view(),
+        name="user-change-role",
+    ),
+    path(
+        "users/<uuid:id>/role",
+        views.ChangeUserRoleView.as_view(),
+        name="user-role",
+    ),
     path(
         "users/<uuid:id>/suspend",
         views.SuspendAccountView.as_view(),

@@ -34,7 +34,7 @@ from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
-from apps.accounts.models import Account
+from apps.accounts.models import Account, RoleAssignment
 from apps.core.models import AuditLogEntry
 from apps.hackathons.models import Hackathon
 from apps.organizations.models import Organization
@@ -291,6 +291,82 @@ def delete_account(*, admin, user_id, reason=None):
         account.token_version += 1
         account.save(update_fields=["deleted_at", "is_suspended", "token_version", "updated_at"])
     return account
+
+
+def change_user_role(*, admin, user_id, new_role, reason=None):
+    """Allows a Platform Admin (superuser) to change a user's role across
+    Participant, Judge, Organizer, and Admin (Superuser), and vice versa.
+
+    Validates:
+    - Admin holds platform admin privileges
+    - Admin cannot modify their own role (prevents self-lockout)
+    - Platform primary admin cannot be modified/demoted
+    - new_role is a valid choice
+
+    Adjusts account fields (role, is_platform_admin, is_staff, is_superuser),
+    cleans up conflicting role assignments, increments token_version to
+    invalidate stale JWT claims, and writes an AuditLogEntry.
+    """
+    _require_platform_admin(admin)
+    account = _get_account_or_404(user_id)
+
+    if str(account.id) == str(admin.id):
+        raise ValidationError("A Platform Admin cannot change their own role.")
+
+    if account.email and account.email.strip().lower() == getattr(Account, "PLATFORM_ADMIN_EMAIL", "").lower():
+        raise ValidationError("The primary Platform Administrator role cannot be modified.")
+
+    normalized_role = (new_role or "").strip().lower()
+    if normalized_role in ("admin", "superuser", "platform_admin"):
+        normalized_role = "admin"
+    elif normalized_role in ("judge", "organizer", "participant"):
+        pass
+    else:
+        raise ValidationError({"role": f"Invalid role '{new_role}'. Must be one of: participant, judge, organizer, admin."})
+
+    previous_role = getattr(account, "role", "participant") or "participant"
+    if account.is_platform_admin:
+        previous_role = "admin"
+
+    if previous_role == normalized_role:
+        return account
+
+    change_reason = (reason or "").strip() or f"Role changed from {previous_role.upper()} to {normalized_role.upper()} by platform administrator"
+
+    with transaction.atomic():
+        if normalized_role == "admin":
+            account.role = "admin"
+            account.is_platform_admin = True
+            account.is_staff = True
+            account.is_superuser = True
+        else:
+            account.role = normalized_role
+            account.is_platform_admin = False
+            account.is_staff = False
+            account.is_superuser = False
+
+            if normalized_role == "participant":
+                RoleAssignment.objects.filter(user=account, role__in=["judge", "organizer"]).delete()
+            elif normalized_role == "judge":
+                RoleAssignment.objects.filter(user=account, role="organizer").delete()
+            elif normalized_role == "organizer":
+                RoleAssignment.objects.filter(user=account, role="judge").delete()
+
+        account.token_version += 1
+        account.save(update_fields=[
+            "role", "is_platform_admin", "is_staff", "is_superuser", "token_version", "updated_at"
+        ])
+
+        _record_moderation_action(
+            admin=admin,
+            action="account.role_changed",
+            target_type="account",
+            target_id=account.id,
+            reason=change_reason,
+        )
+
+    return account
+
 
 
 # ---- FR-ADMIN-002: platform-wide search ------------------------------------
