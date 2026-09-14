@@ -12,6 +12,7 @@ accounts -- services
 ...
 """
 
+import html
 import re
 import urllib.parse
 from datetime import timedelta
@@ -63,7 +64,7 @@ logger = logging.getLogger(__name__)
 
 import threading
 
-def _send_mail(*, subject, message, to):
+def _send_mail(*, subject, message, to, html_message=None):
     """Sends email in a background daemon thread so network SMTP latency never blocks the HTTP response."""
     # Always print the email message content immediately to stdout so the link is visible in cloud logs
     print(f"\n[EMAIL DISPATCH] To: {to} | Subject: {subject}\nMessage:\n{message}\n", flush=True)
@@ -80,6 +81,7 @@ def _send_mail(*, subject, message, to):
                 from_email=from_email,
                 recipient_list=[to],
                 fail_silently=False,
+                html_message=html_message,
             )
             logger.info("Email successfully sent to %s", to)
             print(f"[EMAIL SUCCESS] Verification email sent to {to}", flush=True)
@@ -153,14 +155,122 @@ def _make_verification_token(account):
     return signing.dumps({"uid": str(account.id)}, salt=EMAIL_VERIFICATION_SALT)
 
 
+def _build_verification_email_html(*, verify_url: str, user_name: str = "") -> str:
+    escaped_name = html.escape(user_name or "there")
+    escaped_url = html.escape(verify_url)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify Your Email - Hodana</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <div style="display: none; font-size: 1px; color: #f1f5f9; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
+    Please verify your email address to activate your Hodana account.
+  </div>
+  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f1f5f9; table-layout: fixed;">
+    <tr>
+      <td align="center" style="padding: 40px 16px 48px 16px;">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 580px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.04); border: 1px solid #e2e8f0;">
+          <tr>
+            <td align="center" style="background-color: #0f6b5c; padding: 36px 32px 32px 32px; text-align: center;">
+              <span style="display: inline-block; font-size: 26px; font-weight: 800; letter-spacing: 2px; color: #ffffff; text-transform: uppercase;">
+                HODANA
+              </span>
+              <br>
+              <span style="font-size: 13px; font-weight: 500; letter-spacing: 0.5px; color: #a7f3d0; text-transform: uppercase;">
+                Ethiopia Innovation Hub
+              </span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px 40px 32px 40px; background-color: #ffffff;">
+              <h1 style="margin: 0 0 16px 0; font-size: 24px; font-weight: 700; color: #0f172a; text-align: center;">
+                Verify Your Email Address
+              </h1>
+              <p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.6; color: #334155;">
+                Hi <strong>{escaped_name}</strong>,
+              </p>
+              <p style="margin: 0 0 28px 0; font-size: 15px; line-height: 1.6; color: #475569;">
+                Thank you for signing up for Hodana! We're excited to have you join Ethiopia's premier innovation ecosystem. To activate your account and start participating in hackathons, please confirm your email address:
+              </p>
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto 32px auto;">
+                <tr>
+                  <td align="center" style="border-radius: 10px; background-color: #0f6b5c; box-shadow: 0 4px 14px rgba(15, 107, 92, 0.35);">
+                    <a href="{escaped_url}" target="_blank" style="display: inline-block; padding: 15px 38px; font-size: 16px; font-weight: 700; color: #ffffff; text-decoration: none; border-radius: 10px; background-color: #0f6b5c; letter-spacing: 0.3px;">
+                      Verify My Email
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 24px;">
+                <tr>
+                  <td style="padding: 14px 18px; font-size: 13px; line-height: 1.5; color: #64748b;">
+                    <strong style="color: #334155;">Note:</strong> This verification link will expire in <strong>24 hours</strong>. If you did not create an account on Hodana, no action is required and you can safely ignore this email.
+                  </td>
+                </tr>
+              </table>
+              <div style="border-top: 1px solid #f1f5f9; padding-top: 20px; font-size: 12px; line-height: 1.5; color: #94a3b8;">
+                If you are having trouble clicking the button, copy and paste the link below into your web browser:
+                <div style="margin-top: 8px; word-break: break-all;">
+                  <a href="{escaped_url}" style="color: #0f6b5c; text-decoration: underline;">
+                    {escaped_url}
+                  </a>
+                </div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 24px 40px; text-align: center;">
+              <p style="margin: 0 0 6px 0; font-size: 12px; font-weight: 600; color: #64748b;">
+                Hodana • Ethiopia Innovation Hub
+              </p>
+              <p style="margin: 0; font-size: 11px; color: #94a3b8; line-height: 1.4;">
+                This is an automated system notification. Please do not reply directly to this email.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+
+def render_verification_email(*, verify_url: str, user_name: str = "") -> str:
+    """Renders the HTML verification email template with the 'Verify My Email' button."""
+    context = {
+        "verify_url": verify_url,
+        "user_name": user_name or "there",
+    }
+    try:
+        from django.template.loader import render_to_string
+        return render_to_string("accounts/verification_email.html", context)
+    except Exception as exc:
+        logger.warning("Template rendering failed: %s; using fallback builder", exc)
+        return _build_verification_email_html(verify_url=verify_url, user_name=user_name)
+
+
 def send_verification_email(account):
     token = _make_verification_token(account)
     encoded_token = urllib.parse.quote(token)
     verify_url = f"{settings.FRONTEND_URL.rstrip('/')}/en/verify-email?token={encoded_token}"
+    user_name = (getattr(account, "full_name", "") or "").strip()
+    html_message = render_verification_email(verify_url=verify_url, user_name=user_name)
+    plain_message = (
+        f"Hi {user_name or 'there'},\n\n"
+        f"Thank you for signing up for Hodana!\n\n"
+        f"Confirm your email address to activate your account:\n\n{verify_url}\n\n"
+        f"This verification link will expire in 24 hours.\n\n"
+        f"If you did not create an account on Hodana, please ignore this email.\n"
+    )
     _send_mail(
         subject="Verify your Innovation Hub account",
-        message=f"Confirm your email address to activate your account:\n\n{verify_url}",
+        message=plain_message,
         to=account.email,
+        html_message=html_message,
     )
     return token
 
