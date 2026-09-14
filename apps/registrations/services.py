@@ -357,13 +357,7 @@ def list_organizer_registrations(*, actor, hackathon_id=None, status=None, keywo
     if is_platform_admin:
         managed_hackathons = Hackathon.objects.all()
     else:
-        user_org_ids = RoleAssignment.objects.filter(
-            user=actor, role="organizer", scope_type="organization"
-        ).values_list("scope_id", flat=True)
-        created_org_ids = Organization.objects.filter(created_by=actor).values_list("id", flat=True)
-        managed_hackathons = Hackathon.objects.filter(
-            Q(host_org_id__in=user_org_ids) | Q(host_org_id__in=created_org_ids) | Q(created_by=actor)
-        )
+        managed_hackathons = Hackathon.objects.filter(created_by=actor)
 
     managed_hackathon_ids = set(managed_hackathons.values_list("id", flat=True))
 

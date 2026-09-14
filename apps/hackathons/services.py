@@ -305,13 +305,7 @@ def list_hackathons(*, keyword=None, tag=None, mode=None, status=None, field=Non
         if getattr(requester, "is_platform_admin", False):
             queryset = Hackathon.objects.all()
         else:
-            user_org_ids = RoleAssignment.objects.filter(
-                user=requester, role="organizer", scope_type="organization"
-            ).values_list("scope_id", flat=True)
-            created_org_ids = Organization.objects.filter(created_by=requester).values_list("id", flat=True)
-            queryset = Hackathon.objects.filter(
-                Q(host_org_id__in=user_org_ids) | Q(host_org_id__in=created_org_ids) | Q(created_by=requester)
-            )
+            queryset = Hackathon.objects.filter(created_by=requester)
         if status:
             queryset = queryset.filter(status=status)
     else:
@@ -752,12 +746,7 @@ def export_hackathon_data(*, actor, hackathon_id="all", resource="complete", for
     if getattr(actor, "is_platform_admin", False):
         managed_qs = Hackathon.objects.all()
     else:
-        user_org_ids = RoleAssignment.objects.filter(
-            user=actor, role="organizer", scope_type="organization"
-        ).values_list("scope_id", flat=True)
-        managed_qs = Hackathon.objects.filter(
-            Q(host_org_id__in=user_org_ids) | Q(created_by=actor)
-        )
+        managed_qs = Hackathon.objects.filter(created_by=actor)
 
     cleaned_id = str(hackathon_id or "").strip()
     if cleaned_id and cleaned_id.lower() not in ("all", "all hackathons", "undefined", "null", ""):

@@ -390,16 +390,13 @@ def revoke_invitation(*, actor, invitation_id):
 
 
 def list_organizer_judges(*, actor, hackathon_id=None, status=None):
-    org_ids = RoleAssignment.objects.filter(
-        user=actor, role="organizer", scope_type="organization",
-    ).values_list("scope_id", flat=True)
-
-    # Also include hackathons created directly by actor
-    created_hackathon_ids = Hackathon.objects.filter(created_by=actor).values_list("id", flat=True)
+    if getattr(actor, "is_platform_admin", False):
+        created_hackathon_ids = Hackathon.objects.all().values_list("id", flat=True)
+    else:
+        created_hackathon_ids = Hackathon.objects.filter(created_by=actor).values_list("id", flat=True)
 
     qs = JudgeInvitation.objects.filter(
-        models.Q(round__hackathon__host_org_id__in=org_ids) |
-        models.Q(round__hackathon_id__in=created_hackathon_ids),
+        round__hackathon_id__in=created_hackathon_ids,
     ).select_related("round__hackathon", "round")
 
     if hackathon_id and hackathon_id != "All":
