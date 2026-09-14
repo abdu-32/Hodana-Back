@@ -48,7 +48,7 @@ LOCKOUT_WINDOW = timedelta(minutes=15)
 LOCKOUT_DURATION = timedelta(minutes=15)
 
 EMAIL_VERIFICATION_SALT = "accounts.email-verification"
-EMAIL_VERIFICATION_MAX_AGE = 24 * 60 * 60  # 24h, FR-AUTH-003
+EMAIL_VERIFICATION_MAX_AGE = 3 * 60  # 3 minutes, FR-AUTH-003
 
 PASSWORD_RESET_SALT = "accounts.password-reset"
 PASSWORD_RESET_MAX_AGE = 60 * 60  # 1h, FR-AUTH-004
@@ -204,21 +204,13 @@ def _build_verification_email_html(*, verify_url: str, user_name: str = "") -> s
                   </td>
                 </tr>
               </table>
-              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 24px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 8px;">
                 <tr>
                   <td style="padding: 14px 18px; font-size: 13px; line-height: 1.5; color: #64748b;">
-                    <strong style="color: #334155;">Note:</strong> This verification link will expire in <strong>24 hours</strong>. If you did not create an account on Hodana, no action is required and you can safely ignore this email.
+                    <strong style="color: #334155;">Note:</strong> This verification link will expire in <strong>3 minutes</strong>. If you did not create an account on Hodana, no action is required and you can safely ignore this email.
                   </td>
                 </tr>
               </table>
-              <div style="border-top: 1px solid #f1f5f9; padding-top: 20px; font-size: 12px; line-height: 1.5; color: #94a3b8;">
-                If you are having trouble clicking the button, copy and paste the link below into your web browser:
-                <div style="margin-top: 8px; word-break: break-all;">
-                  <a href="{escaped_url}" style="color: #0f6b5c; text-decoration: underline;">
-                    {escaped_url}
-                  </a>
-                </div>
-              </div>
             </td>
           </tr>
           <tr>
@@ -263,7 +255,7 @@ def send_verification_email(account):
         f"Hi {user_name or 'there'},\n\n"
         f"Thank you for signing up for Hodana!\n\n"
         f"Confirm your email address to activate your account:\n\n{verify_url}\n\n"
-        f"This verification link will expire in 24 hours.\n\n"
+        f"This verification link will expire in 3 minutes.\n\n"
         f"If you did not create an account on Hodana, please ignore this email.\n"
     )
     _send_mail(
