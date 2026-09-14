@@ -105,15 +105,15 @@ class TestEmailVerification:
         with freeze_time("2026-01-01 00:00:00"):
             token = services.send_verification_email(unverified_account)
 
-        with freeze_time("2026-01-02 00:00:01"):  # 24h + 1s later
+        with freeze_time("2026-01-01 00:03:01"):  # 3m + 1s later
             with pytest.raises(ValidationError):
                 services.verify_email(token=token)
 
-    def test_link_just_under_24h_still_valid(self, unverified_account):
+    def test_link_just_under_3min_still_valid(self, unverified_account):
         with freeze_time("2026-01-01 00:00:00"):
             token = services.send_verification_email(unverified_account)
 
-        with freeze_time("2026-01-01 23:59:00"):
+        with freeze_time("2026-01-01 00:02:59"):  # just under 3m
             account = services.verify_email(token=token)
         assert account.verification_status == "verified"
 
@@ -151,6 +151,7 @@ class TestEmailVerification:
         assert "Verify My Email" in html_out
         assert 'href="https://example.com/en/verify-email?token=test-token-xyz"' in html_out
         assert "Abebe Bikila" in html_out
+        assert "3 minutes" in html_out
 
 
 # ---------------------------------------------------------------------------
