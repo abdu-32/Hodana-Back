@@ -88,3 +88,20 @@ def test_sanitize_response_removes_question_repetition_and_asterisks():
     assert cleaned == "The Ethiopia Innovation Hub is a national platform..."
     assert "*" not in cleaned
     assert "What is the Ethiopia Innovation Hub?" not in cleaned
+
+@patch("apps.support_ai.services.chat_completion")
+def test_chat_hackathon_rules_retrieval_and_answer(mock_chat):
+    user = AccountFactory()
+    from apps.support_ai.tests.factories import DocumentChunkFactory
+    rules_chunk = DocumentChunkFactory(
+        visibility="public",
+        text="What are the hackathon rules?\n\nAll hackathons follow standard rules: 1. Eligibility 2. Teams of 2 to 5 members 3. Original code.",
+        metadata={"title": "What are the hackathon rules?", "question": "What are the hackathon rules?"}
+    )
+    mock_chat.return_value = "All hackathons follow standard rules: 1. Eligibility 2. Teams of 2 to 5 members 3. Original code."
+    
+    result = chat(actor=user, question="What are the hackathon rules?")
+    
+    assert result["retrieved_chunk_count"] >= 1
+    assert "hackathons follow standard rules" in result["answer"]
+

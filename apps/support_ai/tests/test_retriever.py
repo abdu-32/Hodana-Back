@@ -96,3 +96,41 @@ def test_tc_rag_leak_006_semantic_adjacency():
     )
     assert len(chunks) == 1
     assert chunks[0].text == "Right"
+
+def test_retrieve_hackathon_rules_query():
+    user = AccountFactory()
+    DocumentChunkFactory(
+        visibility="public",
+        text="All hackathons hosted on the Ethiopia Innovation Hub follow standard platform rules and guidelines: 1. Eligibility 2. Team Composition 3. Originality",
+        metadata={"title": "What are the hackathon rules?", "question": "What are the hackathon rules?"}
+    )
+    DocumentChunkFactory(
+        visibility="public",
+        text="You can access the platform on any device with a web browser.",
+        metadata={"title": "Which devices can I use to access the platform?", "question": "Which devices can I use to access the platform?"}
+    )
+    
+    chunks = retrieve_chunks(
+        query_embedding=[],
+        user=user,
+        question="What are the hackathon rules?"
+    )
+    assert len(chunks) >= 1
+    assert "hackathon rules and guidelines" in chunks[0].text
+
+def test_retrieve_chunks_keyword_fallback_when_embedding_empty():
+    user = AccountFactory()
+    chunk = DocumentChunkFactory(
+        visibility="public",
+        text="Official guidelines for hackathon submissions: provide code repo and demo video.",
+        metadata={"title": "Hackathon Submission Guidelines"}
+    )
+    
+    chunks = retrieve_chunks(
+        query_embedding=[],
+        user=user,
+        question="What are the hackathon guidelines?"
+    )
+    assert len(chunks) == 1
+    assert chunks[0].id == chunk.id
+

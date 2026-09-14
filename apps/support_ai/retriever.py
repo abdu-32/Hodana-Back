@@ -95,6 +95,39 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
+STOP_WORDS = {
+    "the", "is", "at", "on", "a", "an", "and", "to", "in", "of", "it", "be", "are",
+    "do", "does", "did", "for", "or", "can", "could", "should", "would", "tell",
+    "me", "give", "you", "your", "my", "this", "that", "these", "those", "what",
+    "where", "when", "which", "who", "whom", "how", "why"
+}
+
+
+def _stem_term(w: str) -> str:
+    w = w.strip("?,.:!;\n\r\"'()[]").lower()
+    if w.startswith("rule"):
+        return "rule"
+    if w.startswith("guideline"):
+        return "guideline"
+    if w.startswith("eligib"):
+        return "eligib"
+    if w.startswith("require"):
+        return "require"
+    if w.startswith("submit"):
+        return "submit"
+    if w.startswith("project"):
+        return "project"
+    if w.startswith("hackathon"):
+        return "hackathon"
+    if w.startswith("team"):
+        return "team"
+    if w.startswith("judge") or w.startswith("judging"):
+        return "judg"
+    if w.startswith("prize") or w.startswith("payout") or w.startswith("payment"):
+        return "payment"
+    return w
+
+
 def retrieve_chunks(
     *,
     query_embedding: list[float],
@@ -110,7 +143,7 @@ def retrieve_chunks(
     Filter chain (mandatory, applied unconditionally):
     1. visibility__in = _allowed_visibility_levels(user, hackathon_id, org_id)
     2. Context scope filter from _build_scope_filter()
-    3. Similarity ranking (cosine similarity over embedding JSON vectors + question title boost)
+    3. Hybrid similarity ranking (vector cosine similarity + title/keyword lexical match)
     """
     from .models import DocumentChunk
     
@@ -129,29 +162,72 @@ def retrieve_chunks(
     if scope_filter is not None:
         qs = qs.filter(scope_filter)
     
-    # Step 3: Retrieve candidates and rank by similarity
+    # Step 3: Retrieve candidates
     candidates = list(qs.only("id", "text", "embedding", "source_type", "source_id",
                                "visibility", "metadata", "hackathon_id", "organization_id"))
     
-    if not candidates or not query_embedding:
+    # Fallback: if candidates table is empty and platform-wide query, auto-index published FAQs
+    if not candidates and hackathon_id is None and organization_id is None:
+        try:
+            from apps.knowledge_base.models import FAQ
+            from .embeddings import index_faq
+            published_faqs = FAQ.objects.filter(status="published")
+            for f in published_faqs:
+                try:
+                    index_faq(f.id)
+                except Exception:
+                    pass
+            candidates = list(qs.only("id", "text", "embedding", "source_type", "source_id",
+                                       "visibility", "metadata", "hackathon_id", "organization_id"))
+        except Exception:
+            pass
+
+    if not candidates:
         return []
-    
+
     q_norm = question.strip().lower().rstrip("?,.!")
+    raw_words = question.strip().split()
+    q_terms = [_stem_term(w) for w in raw_words if w.strip("?,.:!;\n\r\"'()[]")]
+    q_terms = [t for t in q_terms if t and t not in STOP_WORDS and len(t) > 1]
+    q_term_set = set(q_terms)
     
-    # Rank by cosine similarity + question title exact match boost
+    has_valid_query_vec = isinstance(query_embedding, list) and len(query_embedding) > 0
+    
+    # Rank by cosine similarity + keyword and question title boost
     scored = []
     for chunk in candidates:
-        if not isinstance(chunk.embedding, list) or len(chunk.embedding) != len(query_embedding):
-            continue
-        score = _cosine_similarity(query_embedding, chunk.embedding)
+        vec_score = 0.0
+        if has_valid_query_vec and isinstance(chunk.embedding, list) and len(chunk.embedding) == len(query_embedding):
+            vec_score = _cosine_similarity(query_embedding, chunk.embedding)
+            
+        keyword_score = 0.0
+        chunk_lower = chunk.text.lower()
+        title_str = (chunk.metadata.get("title") or chunk.metadata.get("question") or "").strip().lower()
         
-        # Boost candidate if the chunk's question text matches the user query
+        # 1. Exact or substring question match
         if q_norm and len(q_norm) > 3:
-            chunk_lower = chunk.text.lower()
             if chunk_lower.startswith(q_norm) or f"### {q_norm}" in chunk_lower or q_norm in chunk_lower:
-                score += 1.0
+                keyword_score += 1.0
+            if title_str and (q_norm in title_str or title_str in q_norm):
+                keyword_score += 1.5
                 
-        scored.append((chunk, score))
+        # 2. Token / keyword overlap
+        if q_term_set:
+            chunk_terms = set(_stem_term(w) for w in chunk_lower.split())
+            title_terms = set(_stem_term(w) for w in title_str.split()) if title_str else set()
+            
+            title_matches = q_term_set.intersection(title_terms)
+            if title_matches:
+                keyword_score += 0.8 * (len(title_matches) / len(q_term_set))
+                if len(title_matches) == len(q_term_set):
+                    keyword_score += 1.0  # All key terms matched title/question!
+                    
+            body_matches = q_term_set.intersection(chunk_terms)
+            if body_matches:
+                keyword_score += 0.4 * (len(body_matches) / len(q_term_set))
+
+        total_score = vec_score + keyword_score
+        scored.append((chunk, total_score))
         
     scored = [(chunk, score) for chunk, score in scored if score >= 0.15]
     scored.sort(key=lambda x: x[1], reverse=True)

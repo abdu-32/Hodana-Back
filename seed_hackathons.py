@@ -147,6 +147,13 @@ def seed():
                 "prize_info": h["prize_info"],
                 "open_to": h["open_to"],
                 "banner_url": h["banner_url"],
+                "rules": (
+                    "1. Eligibility: Verified participant account required before registration deadline.\n"
+                    "2. Team Formation: Teams of 2 to 5 members (or solo if permitted). Use Teammate Finder to connect.\n"
+                    "3. Originality & Code Integrity: Projects must be developed during the hackathon. Open-source libraries permitted with proper attribution. Plagiarism results in disqualification.\n"
+                    "4. Deliverables: Public code repository link (GitHub/GitLab/Bitbucket), 2-3 min video demo, and description submitted before deadline (EAT / UTC+3).\n"
+                    "5. Fair Play: Adhere to community guidelines, ethical conduct, and blind judging integrity."
+                ),
                 "status": "published",
                 "registration_opens_at": reg_opens,
                 "registration_closes_at": reg_closes,
