@@ -307,9 +307,31 @@ def chat(
         except LLMUnavailableError:
             logger.warning("LLM unavailable for chat session %s", session.id)
             llm_unavailable = True
-            live_keywords = {"hackathon", "hackathons", "deadline", "deadlines", "registration", "submission", "track", "tracks", "update", "updates", "latest", "recent", "active", "event", "events", "prize", "prizes"}
-            q_terms = set(cleaned_q.split())
-            if q_terms.intersection(live_keywords) and live_context and "No active public hackathons" not in live_context:
+            is_live_query = any(phrase in cleaned_q for phrase in [
+                "active hackathon", "current hackathon", "ongoing hackathon", "live hackathon",
+                "what hackathon", "what are the active", "upcoming hackathon", "latest hackathon",
+                "active event", "upcoming event", "latest update", "announcement"
+            ])
+            is_rules_or_guide_query = any(w in cleaned_q for w in [
+                "rule", "guideline", "eligib", "how to", "how do i", "can i",
+                "what is", "difference", "deliverable", "what are the hackathon rules",
+                "submission requirement", "payout", "telebirr", "cbe birr", "chapa",
+                "rubric", "judging", "blind judging", "teammate finder"
+            ])
+            
+            if chunks and not (is_live_query and not is_rules_or_guide_query):
+                best_chunk = chunks[0]
+                answer_text = best_chunk.text.strip()
+                if "?" in answer_text:
+                    parts = answer_text.split("?", 1)
+                    if len(parts) > 1 and parts[1].strip():
+                        answer_text = parts[1].strip()
+                if answer_text.lower().startswith("answer:"):
+                    answer_text = answer_text.split(":", 1)[1].strip()
+                elif answer_text.lower().startswith("a:"):
+                    answer_text = answer_text.split(":", 1)[1].strip()
+                assistant_content = answer_text
+            elif (is_live_query or not chunks) and live_context and "No active public hackathons" not in live_context:
                 assistant_content = live_context
             elif chunks:
                 best_chunk = chunks[0]

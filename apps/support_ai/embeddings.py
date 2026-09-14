@@ -75,6 +75,14 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
     def normalize_word(w: str) -> str:
         w = w.strip("?,.:!;\n\r\"'()[]").lower()
+        if w.startswith("rule"):
+            return "rule"
+        if w.startswith("guideline"):
+            return "guideline"
+        if w.startswith("eligib"):
+            return "eligibility"
+        if w.startswith("require"):
+            return "requirement"
         if w.startswith("submit"):
             return "submission"
         if w.startswith("project"):
@@ -204,7 +212,7 @@ def index_faq(faq_id: uuid.UUID) -> int:
             text=chunk,
             embedding=embedding,
             chunk_index=i,
-            metadata={"question": faq.question, "category": faq.category.name if faq.category else ""},
+            metadata={"title": faq.question, "question": faq.question, "category": faq.category.name if faq.category else ""},
         )
         count += 1
     
@@ -254,7 +262,7 @@ def index_hackathon(hackathon_id: uuid.UUID) -> int:
                     text=chunk,
                     embedding=emb,
                     chunk_index=i,
-                    metadata={"hackathon_title": hackathon.title, "hackathon_slug": hackathon.slug},
+                    metadata={"title": f"{hackathon.title} - Overview", "hackathon_title": hackathon.title, "hackathon_slug": hackathon.slug},
                 )
                 count += 1
         except EmbeddingError:
@@ -276,7 +284,7 @@ def index_hackathon(hackathon_id: uuid.UUID) -> int:
                     text=chunk,
                     embedding=emb,
                     chunk_index=i,
-                    metadata={"hackathon_title": hackathon.title, "section": "rules"},
+                    metadata={"title": f"{hackathon.title} - Rules", "hackathon_title": hackathon.title, "section": "rules"},
                 )
                 count += 1
         except EmbeddingError:
