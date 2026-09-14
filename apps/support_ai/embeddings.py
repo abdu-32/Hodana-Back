@@ -70,31 +70,71 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     STOP_WORDS = {
         "the", "is", "at", "on", "a", "an", "and", "to", "in", "of", "it", "be", "are",
         "do", "does", "did", "for", "or", "can", "could", "should", "would", "tell",
-        "me", "give", "you", "your", "my", "this", "that", "these", "those"
+        "me", "give", "you", "your", "my", "this", "that", "these", "those", "what",
+        "where", "when", "which", "who", "whom", "how", "why", "about", "i", "we"
     }
 
     def normalize_word(w: str) -> str:
         w = w.strip("?,.:!;\n\r\"'()[]").lower()
-        if w.startswith("rule"):
+        if not w:
+            return ""
+        # Participation & Team
+        if w in ("solo", "alone", "individual"):
+            return "individual"
+        if w.startswith("team") or w == "roster":
+            return "team"
+        if w.startswith("member"):
+            return "member"
+        # Rules & Guidelines
+        if w.startswith("rule") or w.startswith("guideline") or w.startswith("policy"):
             return "rule"
-        if w.startswith("guideline"):
-            return "guideline"
         if w.startswith("eligib"):
-            return "eligibility"
+            return "eligib"
         if w.startswith("require"):
-            return "requirement"
-        if w.startswith("submit"):
-            return "submission"
+            return "require"
+        # Submissions & Projects
+        if w.startswith("submit") or w in ("submission", "submissions"):
+            return "submit"
         if w.startswith("project"):
             return "project"
-        if w.startswith("hackathon"):
+        if w.startswith("deliverable"):
+            return "deliverable"
+        if w in ("repo", "repository", "github", "gitlab"):
+            return "repo"
+        if w in ("demo", "video", "youtube", "loom"):
+            return "demo"
+        if w.startswith("hackathon") or w.startswith("compet"):
             return "hackathon"
-        if w.startswith("team"):
-            return "team"
+        # Judging & Scoring
         if w.startswith("judge") or w.startswith("judging"):
-            return "judging"
-        if w.startswith("prize") or w.startswith("payout") or w.startswith("payment"):
+            return "judg"
+        if w.startswith("rubric") or w.startswith("criteria"):
+            return "rubric"
+        if w.startswith("score") or w.startswith("scoring"):
+            return "score"
+        if w in ("blind", "bias", "unbiased", "anonymous"):
+            return "blind_judg"
+        # Payments & Prizes
+        if w.startswith("prize") or w.startswith("award"):
+            return "prize"
+        if w.startswith("payout") or w.startswith("payment") or w.startswith("disburs") or w == "cash":
             return "payment"
+        if w in ("telebirr", "cbe", "cbebirr", "chapa", "birr", "etb"):
+            return w
+        # Cost & Free
+        if w in ("free", "cost", "fee", "fees", "price", "charge"):
+            return "free_cost"
+        # Language
+        if w in ("amharic", "english", "language", "translate", "switch"):
+            return w
+        # Verification & Badges
+        if w.startswith("badge") or w.startswith("verif"):
+            return "verif"
+        # Architecture & Tech
+        if w.startswith("architect") or w in ("monolith", "microservice", "stack"):
+            return "architect"
+        if w in ("security", "encrypt", "jwt", "auth", "token"):
+            return "security"
         return w
 
     def _build_feature_vec(text: str, dim: int = 1536) -> list[float]:

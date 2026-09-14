@@ -162,3 +162,33 @@ def test_chat_fallback_answers_registrations_and_teams(mock_chat):
     assert "Teammate Finder" in result["answer"] or "Solo" in result["answer"]
     assert "*" not in result["answer"]
 
+
+def test_sanitize_response_removes_q_header_prefix():
+    from apps.support_ai.services import _sanitize_response
+    raw = "### Q: What are the hackathon rules?\nAll hackathons hosted on the Ethiopia Innovation Hub follow standard platform rules and guidelines:\n1. **Eligibility & Registration**: Participants must create a verified account."
+    cleaned = _sanitize_response(raw, question="What are the hackathon rules?")
+    assert not cleaned.startswith("### Q:")
+    assert not cleaned.startswith("What are the hackathon rules?")
+    assert "All hackathons hosted on the Ethiopia Innovation Hub" in cleaned
+    assert "*" not in cleaned
+
+
+@patch("apps.support_ai.services.chat_completion")
+def test_chat_answers_submission_deliverables_accurately(mock_chat):
+    mock_chat.side_effect = LLMUnavailableError("Offline")
+    user = AccountFactory()
+    from apps.support_ai.tests.factories import DocumentChunkFactory
+    DocumentChunkFactory(
+        visibility="public",
+        text="### Q: What deliverables must be included in a project submission?\nStandard submission requirements include: 1. Project Title 2. Public Code Repository Link 3. Video Demo Link.",
+        metadata={"title": "What deliverables must be included in a project submission?"}
+    )
+
+    result = chat(actor=user, question="What deliverables must be included in a project submission?")
+
+    assert result["retrieved_chunk_count"] >= 1
+    assert "Public Code Repository Link" in result["answer"]
+    assert "### Q:" not in result["answer"]
+    assert "*" not in result["answer"]
+
+
