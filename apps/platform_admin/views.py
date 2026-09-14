@@ -241,6 +241,24 @@ class DeleteAccountView(APIView):
     def post(self, request, id):
         return self.delete(request, id)
 
+    @extend_schema(
+        request=serializers.ChangeUserRoleSerializer,
+        responses={200: serializers.AdminAccountSerializer},
+    )
+    def patch(self, request, id):
+        if "role" in request.data:
+            serializer = serializers.ChangeUserRoleSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            account = services.change_user_role(
+                admin=request.user,
+                user_id=id,
+                new_role=serializer.validated_data["role"],
+                reason=serializer.validated_data.get("reason"),
+            )
+            return Response(serializers.AdminAccountSerializer(account).data, status=status.HTTP_200_OK)
+        return Response({"error": "Unsupported operation"}, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 class ChangeUserRoleView(APIView):
     """POST /admin/users/{id}/change-role or POST /admin/users/{id}/role
