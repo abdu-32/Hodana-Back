@@ -105,3 +105,60 @@ def test_chat_hackathon_rules_retrieval_and_answer(mock_chat):
     assert result["retrieved_chunk_count"] >= 1
     assert "hackathons follow standard rules" in result["answer"]
 
+
+@patch("apps.support_ai.services.chat_completion")
+def test_chat_live_platform_context_in_llm_prompt(mock_chat):
+    user = AccountFactory()
+    from apps.hackathons.tests.factories import HackathonFactory
+    from django.utils import timezone
+    now = timezone.now()
+    HackathonFactory(
+        title="Ethio-Fintech Innovation Sprint",
+        status="published",
+        is_suspended=False,
+        registration_opens_at=now - timezone.timedelta(days=2),
+        registration_closes_at=now + timezone.timedelta(days=10),
+        submission_opens_at=now - timezone.timedelta(days=1),
+        submission_closes_at=now + timezone.timedelta(days=12),
+        total_prize_budget=500000,
+        rules="Build innovative financial inclusion solutions for Ethiopia.",
+    )
+    mock_chat.return_value = "The Ethio-Fintech Innovation Sprint is currently active with a prize pool of 500,000 ETB."
+
+    result = chat(actor=user, question="What are the active hackathons?")
+
+    # Verify that chat_completion was called with live platform state
+    assert mock_chat.called
+    call_messages = mock_chat.call_args[1]["messages"]
+    user_prompt = call_messages[-1]["content"]
+    assert "Ethio-Fintech Innovation Sprint" in user_prompt
+    assert "PAYMENTS, PRIZES & LOCAL CURRENCY" in user_prompt
+    assert "Telebirr" in user_prompt
+    assert "500,000 ETB" in result["answer"]
+
+
+@patch("apps.support_ai.services.chat_completion")
+def test_chat_fallback_answers_payments_and_prizes(mock_chat):
+    mock_chat.side_effect = LLMUnavailableError("Service down")
+    user = AccountFactory()
+
+    result = chat(actor=user, question="What payment methods and rails are supported?")
+
+    assert result["llm_unavailable"] is True
+    assert "Telebirr" in result["answer"]
+    assert "CBE Birr" in result["answer"]
+    assert "Chapa" in result["answer"]
+    assert "*" not in result["answer"]
+
+
+@patch("apps.support_ai.services.chat_completion")
+def test_chat_fallback_answers_registrations_and_teams(mock_chat):
+    mock_chat.side_effect = LLMUnavailableError("Service down")
+    user = AccountFactory()
+
+    result = chat(actor=user, question="How does registration and teammate finder work?")
+
+    assert result["llm_unavailable"] is True
+    assert "Teammate Finder" in result["answer"] or "Solo" in result["answer"]
+    assert "*" not in result["answer"]
+

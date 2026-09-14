@@ -74,13 +74,14 @@ def _build_scope_filter(*, hackathon_id=None, organization_id=None):
       - chunks scoped to THAT hackathon, OR
       - platform-wide public chunks (hackathon_id IS NULL AND visibility='public')
     but NOT chunks scoped to a different hackathon.
+    A general session (no hackathon/org specified) sees all public content across the platform.
     """
     if hackathon_id is not None:
         return Q(hackathon_id=hackathon_id) | Q(hackathon_id__isnull=True, visibility="public")
     if organization_id is not None:
         return Q(organization_id=organization_id) | Q(organization_id__isnull=True, visibility="public")
-    # No context: only platform-wide public
-    return Q(hackathon_id__isnull=True, organization_id__isnull=True)
+    # No context: all public platform-wide chunks (FAQs, articles, published hackathons)
+    return Q(visibility="public")
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
